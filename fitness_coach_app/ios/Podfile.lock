@@ -2,28 +2,59 @@ PODS:
   - audioplayers_darwin (0.0.1):
     - Flutter
     - FlutterMacOS
+  - Auth0 (2.10.0):
+    - JWTDecode (= 3.2.0)
+    - SimpleKeychain (= 1.2.0)
+  - auth0_flutter (1.14.0):
+    - Auth0 (= 2.10.0)
+    - Flutter
+    - FlutterMacOS
+    - JWTDecode (= 3.2.0)
+    - SimpleKeychain (= 1.2.0)
   - camera_avfoundation (0.0.1):
     - Flutter
   - Flutter (1.0.0)
+  - JWTDecode (3.2.0)
+  - shared_preferences_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - SimpleKeychain (1.2.0)
 
 DEPENDENCIES:
   - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/darwin`)
+  - auth0_flutter (from `.symlinks/plugins/auth0_flutter/darwin`)
   - camera_avfoundation (from `.symlinks/plugins/camera_avfoundation/ios`)
   - Flutter (from `Flutter`)
+  - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
+
+SPEC REPOS:
+  trunk:
+    - Auth0
+    - JWTDecode
+    - SimpleKeychain
 
 EXTERNAL SOURCES:
   audioplayers_darwin:
     :path: ".symlinks/plugins/audioplayers_darwin/darwin"
+  auth0_flutter:
+    :path: ".symlinks/plugins/auth0_flutter/darwin"
   camera_avfoundation:
     :path: ".symlinks/plugins/camera_avfoundation/ios"
   Flutter:
     :path: Flutter
+  shared_preferences_foundation:
+    :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
 
 SPEC CHECKSUMS:
   audioplayers_darwin: 835ced6edd4c9fc8ebb0a7cc9e294a91d99917d5
+  Auth0: 2876d0c36857422eda9cb580a6cc896c7d14cb36
+  auth0_flutter: 031042ca6cf84f1b21611062b33ea7ec4bf3bc52
   camera_avfoundation: 5675ca25298b6f81fa0a325188e7df62cc217741
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  JWTDecode: 7dae24cb9bf9b608eae61e5081029ec169bb5527
+  shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
+  SimpleKeychain: 768cf43ae778b1c21816e94dddf01bb8ee96a075
 
-PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
+PODFILE CHECKSUM: e30f02f9d1c72c47bb6344a0a748c9d268180865
 
 COCOAPODS: 1.16.2

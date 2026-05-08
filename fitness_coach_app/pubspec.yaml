@@ -14,6 +14,8 @@ dependencies:
   audioplayers: ^6.0.0
   path_provider: ^2.1.4
   image: ^4.1.0
+  auth0_flutter: ^1.4.1
+  shared_preferences: ^2.3.2
 
 dev_dependencies:
   flutter_test:
@@ -22,3 +24,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/avatars/
+    - lib/images/profile_pictures/

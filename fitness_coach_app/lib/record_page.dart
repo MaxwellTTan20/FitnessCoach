@@ -10,6 +10,8 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 
+import 'user_profile.dart';
+
 // --- Config (edit these to change behaviour) ---
 const String _kAnthropicKey =
     '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';
@@ -64,7 +66,7 @@ class _RecordPageState extends State<RecordPage> {
   String _anthropicKey = _kAnthropicKey;
   String _openAiKey = '';
   String _backendStatus = 'Connecting to backend...';
-  String _selectedExercise = 'Squat';
+  String get _selectedExercise => AppProfile.exercises[AppProfile.instance.selectedExerciseIndex];
 
   @override
   void initState() {
@@ -479,12 +481,17 @@ class _RecordPageState extends State<RecordPage> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  children: ['Squat', 'Bench', 'Deadlift', 'Push-up'].map((exercise) {
+                  children: AppProfile.exercises.asMap().entries.map((entry) {
+                    final i = entry.key;
+                    final exercise = entry.value;
                     final selected = _selectedExercise == exercise;
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: GestureDetector(
-                        onTap: () => setState(() => _selectedExercise = exercise),
+                        onTap: () {
+                          AppProfile.instance.setExercise(i).ignore();
+                          setState(() {});
+                        },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
                           padding: EdgeInsets.symmetric(
