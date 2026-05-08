@@ -1,0 +1,252 @@
+"""
+Standalone webcam demo for testing SquatAnalyzer locally without the Flask server
+or Flutter app. Use this to validate detection logic before exposing it through the API.
+
+Usage:
+    python demo_webcam.py                     # Basic test, no AI
+    python demo_webcam.py --mode pro          # Pro thresholds
+    python demo_webcam.py --provider claude   # With AI feedback (needs ANTHROPIC_API_KEY)
+"""
+import argparse
+import sys
+
+from dotenv import load_dotenv
+load_dotenv()
+
+import cv2
+
+from analyzer import SquatAnalyzer
+from thresholds import THRESHOLDS
+
+# Module-level storage for the most recent rep data (for overlay display)
+_last_rep_data = None
+_last_ai_feedback = None
+
+
+def draw_text_bg(frame, text, pos, font_scale=0.5, color=(255, 255, 255), thickness=1):
+    """Draw text with a dark background rectangle for readability."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+    x, y = pos
+    # Draw background rectangle
+    cv2.rectangle(frame, (x - 2, y - text_h - 4), (x + text_w + 2, y + baseline), (0, 0, 0), -1)
+    # Draw text
+    cv2.putText(frame, text, (x, y), font, font_scale, color, thickness, cv2.LINE_AA)
+    return text_h + baseline + 4  # Return height for stacking
+
+
+def draw_overlays(frame, analyzer):
+    """Draw debug overlays on the frame."""
+    h, w = frame.shape[:2]
+    y_offset = 20
+
+    # --- Top left: state, counts, feedback ---
+    y = y_offset
+    y += draw_text_bg(frame, f"State: {analyzer.state}", (10, y))
+    y += draw_text_bg(frame, f"Reps: {analyzer.correct_count} correct / {analyzer.incorrect_count} incorrect", (10, y))
+    if analyzer.feedback:
+        y += draw_text_bg(frame, f"Feedback: {analyzer.feedback}", (10, y), color=(0, 255, 255))
+
+    # --- Top right: live angles ---
+    angle_text1 = f"Knee: {analyzer.knee_angle:.1f}"
+    angle_text2 = f"Hip: {analyzer.hip_angle:.1f}"
+    # Right-align
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    (tw1, _), _ = cv2.getTextSize(angle_text1, font, 0.5, 1)
+    (tw2, _), _ = cv2.getTextSize(angle_text2, font, 0.5, 1)
+    draw_text_bg(frame, angle_text1, (w - tw1 - 15, y_offset))
+    draw_text_bg(frame, angle_text2, (w - tw2 - 15, y_offset + 20))
+
+    # --- Bottom left: last rep fault breakdown ---
+    # NOTE: The current analyzer.py doesn't implement detailed fault features like
+    # knee_tracking, hip_symmetry, or tempo. Those fields don't exist in rep_data yet.
+    # This overlay shows what's available; expand when those features are added.
+    if _last_rep_data:
+        rep = _last_rep_data
+        y = h - 100
+        y += draw_text_bg(frame, f"--- Last Rep #{rep.get('rep_number', '?')} ---", (10, y), color=(200, 200, 200))
+        status = "GOOD" if rep.get("is_correct") else "BAD"
+        color = (0, 255, 0) if rep.get("is_correct") else (0, 0, 255)
+        y += draw_text_bg(frame, f"Form: {status}", (10, y), color=color)
+        y += draw_text_bg(frame, f"Knee angle: {rep.get('knee_angle', 0):.1f}", (10, y))
+        y += draw_text_bg(frame, f"Hip angle: {rep.get('hip_angle', 0):.1f}", (10, y))
+        # Placeholder for future fault features:
+        # y += draw_text_bg(frame, f"Knee tracking: {rep.get('knee_tracking', 'N/A')}", (10, y))
+        # y += draw_text_bg(frame, f"Hip symmetry: {rep.get('hip_symmetry', 'N/A')}", (10, y))
+        # y += draw_text_bg(frame, f"Tempo: {rep.get('descent_seconds', '?')}s / {rep.get('ascent_seconds', '?')}s", (10, y))
+
+    # Show AI feedback if available
+    if _last_ai_feedback:
+        # Bottom right
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        # Wrap long feedback
+        max_chars = 40
+        lines = [_last_ai_feedback[i:i+max_chars] for i in range(0, len(_last_ai_feedback), max_chars)]
+        y = h - 20 - (len(lines) - 1) * 20
+        for line in lines:
+            (tw, _), _ = cv2.getTextSize(line, font, 0.45, 1)
+            draw_text_bg(frame, line, (w - tw - 15, y), font_scale=0.45, color=(0, 255, 200))
+            y += 18
+
+
+def pretty_print_rep(rep_data):
+    """Print rep data in a readable format, truncating rep_trajectory if present."""
+    print("\n" + "=" * 50)
+    print(f"REP #{rep_data.get('rep_number', '?')} COMPLETE")
+    print("=" * 50)
+    for key, value in rep_data.items():
+        if key == "rep_trajectory":
+            # Truncate large trajectory data
+            if isinstance(value, (list, tuple)):
+                print(f"  {key}: <{len(value)} frames>")
+            else:
+                print(f"  {key}: <truncated>")
+        elif isinstance(value, float):
+            print(f"  {key}: {value:.2f}")
+        else:
+            print(f"  {key}: {value}")
+    print("=" * 50)
+
+
+def create_rep_callback(ai_coach=None):
+    """Create the on_rep_complete callback."""
+    def on_rep_complete(rep_data):
+        global _last_rep_data, _last_ai_feedback
+
+        _last_rep_data = rep_data
+        pretty_print_rep(rep_data)
+
+        if ai_coach:
+            try:
+                feedback = ai_coach.get_feedback(rep_data)
+                print(f"[AI Coach] {feedback}")
+                _last_ai_feedback = feedback
+            except Exception as e:
+                print(f"[AI Coach Error] {e}")
+                _last_ai_feedback = None
+
+    return on_rep_complete
+
+
+def parse_resolution(res_str):
+    """Parse 'WxH' string into (width, height) tuple."""
+    try:
+        parts = res_str.lower().split("x")
+        return int(parts[0]), int(parts[1])
+    except (ValueError, IndexError):
+        print(f"Invalid resolution format: {res_str}. Use WxH (e.g., 640x480)")
+        sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Standalone webcam demo for SquatAnalyzer")
+    parser.add_argument("--mode", choices=["beginner", "pro"], default="beginner",
+                        help="Squat mode (default: beginner)")
+    parser.add_argument("--resolution", default="640x480",
+                        help="Camera resolution WxH (default: 640x480)")
+    parser.add_argument("--provider", choices=["claude", "openai", "none"], default="none",
+                        help="AI provider for feedback (default: none)")
+    parser.add_argument("--camera-index", type=int, default=0,
+                        help="Camera index (default: 0)")
+    args = parser.parse_args()
+
+    width, height = parse_resolution(args.resolution)
+
+    # Initialize AI coach if requested
+    ai_coach = None
+    if args.provider != "none":
+        try:
+            from ai_coach import AICoach
+            ai_coach = AICoach(provider=args.provider)
+            print(f"AI Coach initialized: {args.provider}")
+        except Exception as e:
+            print(f"Warning: Could not initialize AI coach: {e}")
+            print("Continuing without AI feedback...")
+
+    # Print startup banner
+    print()
+    print("=" * 55)
+    print("  SQUAT TRAINER - Webcam Demo")
+    print("=" * 55)
+    print(f"  Mode:       {args.mode}")
+    print(f"  Resolution: {width}x{height}")
+    print(f"  Camera:     index {args.camera_index}")
+    print(f"  AI:         {args.provider}")
+    print("-" * 55)
+    print("  Stand sideways to camera.")
+    print("  Press 'q' or ESC to quit, 'r' to reset counters.")
+    print("=" * 55)
+    print()
+
+    # Open webcam
+    cap = cv2.VideoCapture(args.camera_index)
+    if not cap.isOpened():
+        print(f"Error: Could not open camera at index {args.camera_index}")
+        sys.exit(1)
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+    # Verify actual resolution
+    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if actual_w != width or actual_h != height:
+        print(f"Note: Camera using {actual_w}x{actual_h} (requested {width}x{height})")
+
+    # Initialize analyzer
+    callback = create_rep_callback(ai_coach)
+    analyzer = SquatAnalyzer(mode=args.mode, on_rep_complete=callback)
+    current_mode = args.mode
+
+    print("Camera opened. Starting capture...")
+
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("Error: Failed to read frame from camera")
+                break
+
+            # Process frame through analyzer
+            annotated = analyzer.process_frame(frame)
+
+            # Draw our debug overlays
+            draw_overlays(annotated, analyzer)
+
+            # Show frame
+            cv2.imshow("Squat Trainer Demo", annotated)
+
+            # Handle keyboard input
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q") or key == 27:  # 'q' or ESC
+                print("\nQuitting...")
+                break
+            elif key == ord("r"):
+                analyzer.reset()
+                global _last_rep_data, _last_ai_feedback
+                _last_rep_data = None
+                _last_ai_feedback = None
+                print("\n[Reset] Counters cleared")
+            elif key == ord("m"):
+                # Toggle mode - would need to reinitialize thresholds
+                # The analyzer stores self.thresh but doesn't have a clean way to switch
+                # without recreating. For now, just print a note.
+                new_mode = "pro" if current_mode == "beginner" else "beginner"
+                print(f"\n[Mode toggle] Switching {current_mode} -> {new_mode}")
+                analyzer.reset()
+                analyzer.mode = new_mode
+                analyzer.thresh = THRESHOLDS[new_mode]
+                current_mode = new_mode
+                print(f"[Mode toggle] Now using {current_mode} thresholds")
+
+    except KeyboardInterrupt:
+        print("\nInterrupted by user")
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+        analyzer.close()
+        print("Cleanup complete.")
+
+
+if __name__ == "__main__":
+    main()
