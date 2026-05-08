@@ -8,6 +8,7 @@ import 'user_profile.dart';
 const List<String> _profileImages = [
   'lib/images/profile_pictures/panda.jpg',
   'lib/images/profile_pictures/perry.png',
+  'lib/images/profile_pictures/bigben.jpg'
 ];
 
 class ProfilePage extends StatefulWidget {
@@ -63,7 +64,12 @@ class _ProfilePageState extends State<ProfilePage> {
         builder: (_) => AuthPage(
           onAuthenticated: () {
             Navigator.of(context).pop();
-            setState(() {});
+            _nameCtrl.text = _profile.name;
+            _usernameCtrl.text = _profile.username;
+            setState(() {
+              _avatarIndex = _profile.avatarIndex.clamp(0, _profileImages.length - 1);
+              _experience = _profile.experience;
+            });
           },
         ),
       ),
@@ -77,6 +83,12 @@ class _ProfilePageState extends State<ProfilePage> {
           .logout();
     } catch (_) {}
     await _profile.clear();
+    _nameCtrl.text = '';
+    _usernameCtrl.text = '';
+    setState(() {
+      _avatarIndex = 0;
+      _experience = 'Beginner';
+    });
     widget.onSignOut?.call();
   }
 

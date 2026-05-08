@@ -1,13 +1,18 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+
+import 'firebase_options.dart';
 
 import 'auth_page.dart';
 import 'profile.dart';
 import 'record_page.dart';
+import 'stats.dart';
 import 'user_profile.dart';
 import 'workouts.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await AppProfile.instance.load();
   runApp(const MainApp());
 }
@@ -78,7 +83,7 @@ class _HomePageState extends State<HomePage> {
         children: [
           _HomeTab(screenWidth: screenWidth),
           const WorkoutsPage(),
-          const _PlaceholderTab(label: 'Stats'),
+          const StatsPage(),
           ProfilePage(onSignOut: () => setState(() => _selectedIndex = 0)),
         ],
       ),
@@ -208,10 +213,10 @@ class _HomeTab extends StatelessWidget {
                   crossAxisSpacing: 16,
                   childAspectRatio: screenWidth < 360 ? 3 / 1 : 4 / 3,
                   children: const [
-                    _WorkoutTile(title: 'Squat Mechanics', icon: Icons.fitness_center),
-                    _WorkoutTile(title: 'Core Bracing', icon: Icons.shield_moon),
-                    _WorkoutTile(title: 'Bar Path', icon: Icons.timeline),
-                    _WorkoutTile(title: 'Mobility Flow', icon: Icons.self_improvement),
+                    _WorkoutTile(title: 'Squat', description: 'Warm-up: 1x3', icon: Icons.fitness_center),
+                    _WorkoutTile(title: 'Bench', description: 'Warm-up: 1x3', icon: Icons.shield_moon),
+                    _WorkoutTile(title: 'Deadlift', description: 'Warm-up: 1x3', icon: Icons.timeline),
+                    _WorkoutTile(title: 'Push-ups', description: 'Warm-up: 1x3', icon: Icons.self_improvement),
                   ],
                 ),
               ],
@@ -223,15 +228,6 @@ class _HomeTab extends StatelessWidget {
   }
 }
 
-class _PlaceholderTab extends StatelessWidget {
-  final String label;
-  const _PlaceholderTab({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(child: Text(label, style: const TextStyle(fontSize: 24, color: Colors.white54)));
-  }
-}
 
 // ── Shared widgets ────────────────────────────────────────────────────────────
 class _FeatureBadge extends StatelessWidget {
@@ -259,7 +255,8 @@ class _FeatureBadge extends StatelessWidget {
 class _WorkoutTile extends StatelessWidget {
   final String title;
   final IconData icon;
-  const _WorkoutTile({required this.title, required this.icon});
+  final String description;
+  const _WorkoutTile({required this.title, required this.description, required this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -269,14 +266,38 @@ class _WorkoutTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0xB3FFFFFF), width: 1.2),
       ),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            decoration: BoxDecoration(color: const Color(0xFF0F4C81), borderRadius: BorderRadius.circular(16)),
-            padding: const EdgeInsets.all(10),
-            child: Icon(icon, color: Colors.white, size: 24),
+          Row(
+            children: [
+              Container(
+                decoration: BoxDecoration(color: const Color(0xFF0F4C81), borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.all(8),
+                child: Icon(icon, color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF1A3A5C),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          Text(
+            description,
+            style: const TextStyle(
+              color: Color(0xFF526A86),
+              fontSize: 15,
+            ),
           ),
         ],
       ),

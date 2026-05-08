@@ -28,7 +28,8 @@ class _AuthPageState extends State<AuthPage> {
       profile.auth0UserId = credentials.user.sub;
       profile.email = credentials.user.email;
       if (credentials.user.name != null) profile.name = credentials.user.name!;
-      await profile.load();
+      await profile.load();           // local cache first
+      await profile.loadFromFirestore(); // overlay with cloud data
       widget.onAuthenticated();
     } catch (e) {
       setState(() => _error = 'Sign-in failed. Please try again.');

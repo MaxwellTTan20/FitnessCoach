@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppProfile {
@@ -36,6 +38,11 @@ class AppProfile {
     'Push-up',
   ];
 
+  CollectionReference<Map<String, dynamic>> get _users =>
+      FirebaseFirestore.instance.collection('users');
+
+  // ── Local (SharedPreferences) ─────────────────────────────────────────────
+
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     hasEverLaunched = prefs.getBool(_kHasLaunched) ?? false;
@@ -58,14 +65,74 @@ class AppProfile {
     await prefs.setBool(_kHasLaunched, true);
   }
 
+  // ── Firestore ─────────────────────────────────────────────────────────────
+
+  Future<void> loadFromFirestore() async {
+    if (auth0UserId == null) {
+      debugPrint('[Firestore] loadFromFirestore skipped — auth0UserId is null');
+      return;
+    }
+    debugPrint('[Firestore] loading doc: users/$auth0UserId');
+    try {
+      final doc = await _users.doc(auth0UserId).get();
+      if (!doc.exists) {
+        debugPrint('[Firestore] no existing doc for this user');
+        return;
+      }
+      final d = doc.data()!;
+      name = (d['name'] as String?) ?? name;
+      username = (d['username'] as String?) ?? username;
+      avatarIndex = (d['avatarIndex'] as int?) ?? avatarIndex;
+      experience = (d['experience'] as String?) ?? experience;
+      selectedExerciseIndex =
+          (d['selectedExerciseIndex'] as int?) ?? selectedExerciseIndex;
+      debugPrint('[Firestore] loaded successfully');
+      await _saveToPrefs();
+    } catch (e) {
+      debugPrint('[Firestore] loadFromFirestore error: $e');
+    }
+  }
+
   Future<void> save() async {
     if (isGuest) return;
+    await Future.wait([
+      _saveToPrefs(),
+      _saveToFirestore(),
+    ]);
+  }
+
+  Future<void> _saveToPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kName, name);
     await prefs.setString(_kUsername, username);
     await prefs.setInt(_kAvatar, avatarIndex);
     await prefs.setString(_kExperience, experience);
+    await prefs.setInt(_kExerciseIndex, selectedExerciseIndex);
   }
+
+  Future<void> _saveToFirestore() async {
+    if (auth0UserId == null) {
+      debugPrint('[Firestore] save skipped — auth0UserId is null');
+      return;
+    }
+    debugPrint('[Firestore] saving doc: users/$auth0UserId');
+    try {
+      await _users.doc(auth0UserId).set({
+        'name': name,
+        'username': username,
+        'avatarIndex': avatarIndex,
+        'experience': experience,
+        'selectedExerciseIndex': selectedExerciseIndex,
+        'email': email,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      debugPrint('[Firestore] saved successfully');
+    } catch (e) {
+      debugPrint('[Firestore] save error: $e');
+    }
+  }
+
+  // ── Clear ─────────────────────────────────────────────────────────────────
 
   Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
