@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "186129001142",
+    "project_id": "fitness-coach-hack-davis",
+    "storage_bucket": "fitness-coach-hack-davis.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:186129001142:android:8b941ac94db2774a099417",
+        "android_client_info": {
+          "package_name": "com.example.fitness_coach_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCSJNhJOLV3GGyvN4abVsfJYsFAs1dhM4s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

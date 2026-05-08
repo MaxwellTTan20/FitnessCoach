@@ -10,6 +10,9 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 
+import 'session_summary.dart';
+import 'user_profile.dart';
+
 // --- Config (edit these to change behaviour) ---
 const String _kAnthropicKey =
     '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';
@@ -64,7 +67,7 @@ class _RecordPageState extends State<RecordPage> {
   String _anthropicKey = _kAnthropicKey;
   String _openAiKey = '';
   String _backendStatus = 'Connecting to backend...';
-  String _selectedExercise = 'Squat';
+  String get _selectedExercise => AppProfile.exercises[AppProfile.instance.selectedExerciseIndex];
 
   @override
   void initState() {
@@ -149,6 +152,19 @@ class _RecordPageState extends State<RecordPage> {
     if (_controller == null || !_controller!.value.isInitialized) return;
     setState(() => _isProcessing = true);
     _controller!.startImageStream(_handleFrame);
+  }
+
+  void _finishSession() {
+    if (_isProcessing) _stopProcessing();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SessionSummaryPage(
+          exercise: _selectedExercise,
+          correctCount: (_stats['correct_count'] as num).toInt(),
+          incorrectCount: (_stats['incorrect_count'] as num).toInt(),
+        ),
+      ),
+    );
   }
 
   void _stopProcessing() {
@@ -479,12 +495,17 @@ class _RecordPageState extends State<RecordPage> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  children: ['Squat', 'Bench', 'Deadlift', 'Push-up'].map((exercise) {
+                  children: AppProfile.exercises.asMap().entries.map((entry) {
+                    final i = entry.key;
+                    final exercise = entry.value;
                     final selected = _selectedExercise == exercise;
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: GestureDetector(
-                        onTap: () => setState(() => _selectedExercise = exercise),
+                        onTap: () {
+                          AppProfile.instance.setExercise(i).ignore();
+                          setState(() {});
+                        },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
                           padding: EdgeInsets.symmetric(
@@ -720,9 +741,20 @@ class _RecordPageState extends State<RecordPage> {
               SizedBox(height: isSmall ? 10 : 12),
               Row(
                 children: [
-                  const _InfoChip(icon: Icons.psychology, label: 'AI Analysis'),
-                  const SizedBox(width: 10),
-                  const _InfoChip(icon: Icons.mic, label: 'Voice'),
+                  ElevatedButton(
+                    onPressed: _finishSession,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor:Color.fromARGB(255, 137, 9, 9),
+                      foregroundColor: Colors.white,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isSmall ? 20 : 28,
+                        vertical: isSmall ? 12 : 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24)),
+                    ),
+                    child: Text('Finish Session')
+                  ),
                   const Spacer(),
                   ElevatedButton(
                     onPressed:
