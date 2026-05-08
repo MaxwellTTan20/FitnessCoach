@@ -9,6 +9,7 @@ import argparse
 import base64
 import io
 import os
+import socket
 import threading
 
 import cv2
@@ -20,7 +21,7 @@ from PIL import Image
 from ai_coach import AICoach
 from analyzer import SquatAnalyzer
 
-ANTHROPIC_API_KEY = "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"
+ANTHROPIC_API_KEY = "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"
 
 app = Flask(__name__)
 CORS(app)
@@ -135,6 +136,11 @@ def status():
     })
 
 
+@app.route("/ping", methods=["GET"])
+def ping():
+    return jsonify({"status": "ok"})
+
+
 @app.route("/reset", methods=["POST"])
 def reset():
     try:
@@ -167,5 +173,13 @@ if __name__ == "__main__":
         print(f"Warning: Could not initialize AI coach: {e}")
         print("Continuing without AI coaching...")
 
-    print(f"Mode: {args.mode} | Starting on http://0.0.0.0:{args.port}")
+    try:
+        local_ip = socket.gethostbyname(socket.gethostname())
+    except Exception:
+        local_ip = "unknown"
+    print(f"Mode: {args.mode} | Port: {args.port}")
+    print(f"╔══════════════════════════════════════╗")
+    print(f"║  Set Flutter server URL to:          ║")
+    print(f"║  http://{local_ip}:{args.port}".ljust(39) + "║")
+    print(f"╚══════════════════════════════════════╝")
     app.run(host="0.0.0.0", port=args.port, debug=False)

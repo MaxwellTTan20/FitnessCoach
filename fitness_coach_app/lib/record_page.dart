@@ -12,7 +12,7 @@ import 'package:image/image.dart' as img;
 
 // --- Config (edit these to change behaviour) ---
 const String _kAnthropicKey =
-    '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';
+    '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';
 const String _kElevenLabsKey =
     'sk_906b72eb783432101589d45a07007c281af45967b331a44b';
 // Arnold voice ID (free tier). To change: pick another ID from backend/voice.py VOICES dict.
@@ -64,10 +64,18 @@ class _RecordPageState extends State<RecordPage> {
   String _anthropicKey = _kAnthropicKey;
   String _openAiKey = '';
   String _backendStatus = 'Connecting to backend...';
+  String _selectedExercise = 'Squat';
 
   @override
   void initState() {
     super.initState();
+    // Allow audio to mix with other sessions (prevents camera freeze on iOS).
+    AudioPlayer.global.setAudioContext(AudioContext(
+      iOS: AudioContextIOS(
+        category: AVAudioSessionCategory.playback,
+        options: {AVAudioSessionOptions.mixWithOthers},
+      ),
+    ));
     _initializeCamera().then((_) => _autoConfigureBackend());
   }
 
@@ -160,6 +168,7 @@ class _RecordPageState extends State<RecordPage> {
         'state': 'standing',
       };
     });
+    http.post(Uri.parse('$_serverUrl/reset')).ignore();
   }
 
   Uint8List _encodeFrame(CameraImage cameraImage) {
@@ -221,7 +230,7 @@ class _RecordPageState extends State<RecordPage> {
       final response = await http
           .post(
             Uri.parse('$_serverUrl/process_frame'),
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
             body: jsonEncode({'image': base64Encode(jpegBytes)}),
           )
           .timeout(const Duration(seconds: 5));
@@ -302,7 +311,7 @@ class _RecordPageState extends State<RecordPage> {
       final response = await http
           .post(
             Uri.parse('$_serverUrl/configure'),
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
             body: jsonEncode({
               'provider': provider,
               'anthropic_key': anthropicKey,
@@ -467,12 +476,45 @@ class _RecordPageState extends State<RecordPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Capture your lift.\nReal-time AI form analysis.',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: isSmall ? 15 : 17,
-                  height: 1.4,
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: ['Squat', 'Bench', 'Deadlift', 'Push-up'].map((exercise) {
+                    final selected = _selectedExercise == exercise;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _selectedExercise = exercise),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isSmall ? 14 : 18,
+                            vertical: isSmall ? 8 : 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? Colors.cyanAccent.withValues(alpha: 0.15)
+                                : Colors.white10,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: selected
+                                  ? Colors.cyanAccent
+                                  : Colors.white24,
+                              width: selected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Text(
+                            exercise,
+                            style: TextStyle(
+                              color: selected ? Colors.cyanAccent : Colors.white70,
+                              fontSize: isSmall ? 13 : 14,
+                              fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
               ),
               const SizedBox(height: 8),
