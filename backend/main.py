@@ -3,6 +3,10 @@ Flask server for AI Squat Trainer.
 Receives frames from the Flutter app, processes with MediaPipe + AI coaching, returns annotated frames.
 TTS is handled by the Flutter app (ElevenLabs called directly from the phone).
 
+Setup:
+    1. Copy .env.example to .env and fill in your API keys.
+    2. Keys are loaded automatically via python-dotenv, or source .env before running.
+
 Run: python main.py [--mode pro]
 """
 import argparse
@@ -11,6 +15,9 @@ import io
 import os
 import socket
 import threading
+
+from dotenv import load_dotenv
+load_dotenv()
 
 import cv2
 import numpy as np
@@ -21,8 +28,6 @@ from PIL import Image
 from ai_coach import AICoach
 from analyzer import SquatAnalyzer
 
-ANTHROPIC_API_KEY = "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"
-
 app = Flask(__name__)
 CORS(app)
 
@@ -31,12 +36,16 @@ ai_coach = None
 _pending_ai_feedback = ""
 
 
-def configure_ai_coach(provider="claude", anthropic_key=ANTHROPIC_API_KEY, openai_key=None):
+def configure_ai_coach(provider="claude", anthropic_key=None, openai_key=None):
     global ai_coach
 
     if not provider:
         ai_coach = None
         return
+
+    # Use provided keys or fall back to environment variables
+    anthropic_key = anthropic_key or os.environ.get("ANTHROPIC_API_KEY")
+    openai_key = openai_key or os.environ.get("OPENAI_API_KEY")
 
     if anthropic_key:
         os.environ["ANTHROPIC_API_KEY"] = anthropic_key
@@ -116,7 +125,7 @@ def configure():
     try:
         data = request.get_json(force=True)
         provider = data.get("provider", "claude")
-        anthropic_key = data.get("anthropic_key") or ANTHROPIC_API_KEY
+        anthropic_key = data.get("anthropic_key")
         openai_key = data.get("openai_key")
 
         configure_ai_coach(provider=provider, anthropic_key=anthropic_key, openai_key=openai_key)
@@ -155,7 +164,7 @@ if __name__ == "__main__":
     parser.add_argument("--mode", choices=["beginner", "pro"], default="beginner")
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--provider", choices=["claude", "openai"], default="claude")
-    parser.add_argument("--anthropic-key", default=ANTHROPIC_API_KEY)
+    parser.add_argument("--anthropic-key", default=None)
     parser.add_argument("--openai-key", default=None)
     args = parser.parse_args()
 

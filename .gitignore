@@ -3,3 +3,6 @@
 __pycache__/
 backend/pose_landmarker_heavy.task
 .DS_Store
+.env
+*.env
+.env.*

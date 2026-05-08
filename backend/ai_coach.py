@@ -4,9 +4,6 @@ AI Coach - unified interface for Claude and OpenAI coaching feedback.
 import os
 from typing import Literal
 
-ANTHROPIC_API_KEY = "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"
-ELEVENLABS_API_KEY = "sk_906b72eb783432101589d45a07007c281af45967b331a44b"
-
 SYSTEM_PROMPT = """You are a concise fitness coach providing real-time voice feedback during squat exercises.
 
 When given rep data, provide 1-2 sentences of helpful, encouraging feedback. Focus on:
@@ -29,7 +26,9 @@ class AICoach:
         self.provider = provider
 
         if provider == "claude":
-            self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY") or ANTHROPIC_API_KEY
+            self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+            if not self.api_key:
+                raise ValueError("Anthropic API key required. Set ANTHROPIC_API_KEY env var or pass api_key.")
             import anthropic
             self.client = anthropic.Anthropic(api_key=self.api_key)
         elif provider == "openai":
