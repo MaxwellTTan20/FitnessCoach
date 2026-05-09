@@ -57,23 +57,29 @@ def draw_overlays(frame, analyzer):
     draw_text_bg(frame, angle_text1, (w - tw1 - 15, y_offset))
     draw_text_bg(frame, angle_text2, (w - tw2 - 15, y_offset + 20))
 
-    # --- Bottom left: last rep fault breakdown ---
-    # NOTE: The current analyzer.py doesn't implement detailed fault features like
-    # knee_tracking, hip_symmetry, or tempo. Those fields don't exist in rep_data yet.
-    # This overlay shows what's available; expand when those features are added.
+    # --- Bottom left: last rep info ---
     if _last_rep_data:
         rep = _last_rep_data
-        y = h - 100
+        y = h - 140
         y += draw_text_bg(frame, f"--- Last Rep #{rep.get('rep_number', '?')} ---", (10, y), color=(200, 200, 200))
         status = "GOOD" if rep.get("is_correct") else "BAD"
         color = (0, 255, 0) if rep.get("is_correct") else (0, 0, 255)
         y += draw_text_bg(frame, f"Form: {status}", (10, y), color=color)
-        y += draw_text_bg(frame, f"Knee angle: {rep.get('knee_angle', 0):.1f}", (10, y))
-        y += draw_text_bg(frame, f"Hip angle: {rep.get('hip_angle', 0):.1f}", (10, y))
-        # Placeholder for future fault features:
-        # y += draw_text_bg(frame, f"Knee tracking: {rep.get('knee_tracking', 'N/A')}", (10, y))
-        # y += draw_text_bg(frame, f"Hip symmetry: {rep.get('hip_symmetry', 'N/A')}", (10, y))
-        # y += draw_text_bg(frame, f"Tempo: {rep.get('descent_seconds', '?')}s / {rep.get('ascent_seconds', '?')}s", (10, y))
+        y += draw_text_bg(frame, f"Knee angle: {rep.get('knee_angle', 0):.1f} (at depth)", (10, y))
+        y += draw_text_bg(frame, f"Hip angle: {rep.get('hip_angle', 0):.1f} (at depth)", (10, y))
+
+        # Trajectory info
+        traj = rep.get("rep_trajectory", [])
+        deepest_idx = rep.get("deepest_frame_index")
+        y += draw_text_bg(frame, f"Trajectory: {len(traj)} frames, deepest @ {deepest_idx}", (10, y), color=(180, 180, 255))
+
+        # Tempo
+        tempo = rep.get("tempo", {})
+        descent = tempo.get('descent_seconds')
+        ascent = tempo.get('ascent_seconds')
+        descent_str = f"{descent:.1f}s" if descent is not None else "?"
+        ascent_str = f"{ascent:.1f}s" if ascent is not None else "?"
+        y += draw_text_bg(frame, f"Tempo: {descent_str} down / {ascent_str} up", (10, y), color=(180, 255, 180))
 
     # Show AI feedback if available
     if _last_ai_feedback:

@@ -28,3 +28,17 @@ THRESHOLDS = {
         "hip_angle_high": 110,
     },
 }
+
+# --- Rep buffer window thresholds ---
+# These control when the trajectory buffer starts/stops capturing frames.
+# Separate from the state machine thresholds above.
+
+# Start buffering when knee angle drops below this (user starting to descend)
+BUFFER_KNEE_START = 165.0
+
+# Stop buffering when knee angle rises above this (user fully standing again)
+BUFFER_KNEE_END = 170.0
+
+# If buffering for this many seconds without entering "squatting" state, discard
+# (user bent knees slightly but didn't actually squat)
+BUFFER_TIMEOUT_SECONDS = 5.0

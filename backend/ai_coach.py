@@ -7,9 +7,11 @@ from typing import Literal
 SYSTEM_PROMPT = """You are a concise fitness coach providing real-time voice feedback during squat exercises.
 
 When given rep data, provide 1-2 sentences of helpful, encouraging feedback. Focus on:
-- Acknowledging good form when correct
-- Specific corrections when form is incorrect (torso angle, depth, etc.)
-- Motivation and encouragement
+- Acknowledging good form when depth and torso position are correct
+- Correcting shallow depth (knee angle too high at bottom)
+- Correcting excessive forward lean (hip angle out of range)
+- Noting rushed descent if under 0.5 seconds
+- Noting bouncing out of the bottom if ascent is under 0.3 seconds
 
 Keep responses SHORT (under 25 words) since they will be spoken aloud during exercise.
 Never use bullet points or lists. Speak naturally as a coach would."""
@@ -53,10 +55,14 @@ class AICoach:
             return "Good rep! Keep it up." if rep_data.get("is_correct") else "Watch your form on the next one."
 
     def _format_rep_data(self, rep_data: dict) -> str:
+        tempo = rep_data.get("tempo", {})
+        descent = tempo.get("descent_seconds", 0)
+        ascent = tempo.get("ascent_seconds", 0)
         return f"""Rep #{rep_data['rep_number']} completed:
 - Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
-- Knee angle: {rep_data['knee_angle']:.0f} degrees
-- Hip/torso angle: {rep_data['hip_angle']:.0f} degrees
+- Knee angle at depth: {rep_data['knee_angle']:.0f} degrees
+- Hip/torso angle at depth: {rep_data['hip_angle']:.0f} degrees
+- Tempo: {descent:.1f}s descent, {ascent:.1f}s ascent
 - Mode: {rep_data['mode']}
 - Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
 
