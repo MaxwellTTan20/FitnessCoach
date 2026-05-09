@@ -27,12 +27,14 @@ from PIL import Image
 
 from ai_coach import AICoach
 from analyzer import SquatAnalyzer, PushupAnalyzer
+from voice import VoiceCoach
 
 app = Flask(__name__)
 CORS(app)
 
 analyzer = None
 ai_coach = None
+voice_coach = None
 _pending_ai_feedback = ""
 current_exercise = "squat"
 current_mode = "beginner"
@@ -75,15 +77,44 @@ def configure_ai_coach(provider="claude", anthropic_key=None, openai_key=None, e
     ai_coach = AICoach(provider=provider, api_key=api_key, exercise=exercise)
 
 
+def configure_voice_coach(use_elevenlabs=None, voice_id=None):
+    global voice_coach
+
+    # Determine runtime preferences from args or environment
+    if use_elevenlabs is None:
+        use_elevenlabs = os.environ.get("USE_ELEVENLABS_VOICE", "true").lower() not in {"0", "false", "no", "off"}
+    api_key = os.environ.get("ELEVENLABS_API_KEY")
+    resolved_voice_id = voice_id or os.environ.get("ELEVENLABS_VOICE_ID", "arnold")
+
+    if not use_elevenlabs:
+        resolved_voice_id = os.environ.get("MACOS_VOICE", "samantha")
+
+    if use_elevenlabs and not api_key:
+        print("[Voice] ELEVENLABS_API_KEY not set; falling back to macOS say.")
+        use_elevenlabs = False
+        resolved_voice_id = os.environ.get("MACOS_VOICE", "samantha")
+
+    try:
+        voice_coach = VoiceCoach(api_key=api_key, voice_id=resolved_voice_id, use_elevenlabs=use_elevenlabs)
+    except Exception as e:
+        print(f"[Voice] Could not initialize voice coach: {e}")
+        voice_coach = None
+
+
 def create_feedback_callback():
     def on_rep_complete(rep_data):
         def process_feedback():
-            global _pending_ai_feedback, ai_coach
+            global _pending_ai_feedback, ai_coach, voice_coach
             try:
                 if ai_coach:
                     feedback = ai_coach.get_feedback(rep_data)
                     print(f"[AI Coach] {feedback}")
                     _pending_ai_feedback = feedback
+                    if voice_coach:
+                        try:
+                            voice_coach.speak(feedback)
+                        except Exception as e:
+                            print(f"[Voice] Error speaking feedback: {e}")
                 else:
                     print(f"[Rep Complete] {rep_data}")
             except Exception as e:
@@ -138,6 +169,9 @@ def configure():
         provider = data.get("provider", "claude")
         anthropic_key = data.get("anthropic_key")
         openai_key = data.get("openai_key")
+        # Optional voice config (do NOT accept raw API keys from clients)
+        use_elevenlabs = data.get("use_elevenlabs")
+        eleven_voice_id = data.get("eleven_voice_id")
         exercise = normalize_exercise(data.get("exercise", current_exercise))
         mode = data.get("mode", current_mode)
 
@@ -148,6 +182,13 @@ def configure():
             exercise=exercise,
         )
 
+        # Apply voice settings if provided (uses backend ELEVENLABS_API_KEY env)
+        if use_elevenlabs is not None or eleven_voice_id:
+            # coerce string booleans if necessary
+            if isinstance(use_elevenlabs, str):
+                use_elevenlabs = use_elevenlabs.lower() not in ("0", "false", "no", "off")
+            configure_voice_coach(use_elevenlabs=use_elevenlabs, voice_id=eleven_voice_id)
+
         # Recreate analyzer only if exercise or mode changed
         if exercise != current_exercise or mode != current_mode:
             if analyzer is not None:
@@ -156,7 +197,7 @@ def configure():
             current_exercise = exercise
             current_mode = mode
 
-        return jsonify({"success": True, "provider": provider, "exercise": exercise, "mode": mode})
+        return jsonify({"success": True, "provider": provider, "exercise": exercise, "mode": mode, "voice_enabled": voice_coach is not None})
     except Exception as e:
         print(f"Error configuring backend: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
@@ -175,6 +216,23 @@ def status():
 @app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "ok"})
+
+
+@app.route("/speak", methods=["POST"])
+def speak_endpoint():
+    global voice_coach
+    try:
+        data = request.get_json(force=True)
+        text = data.get("text", "")
+        if not text:
+            return jsonify({"success": False, "error": "No text provided"}), 400
+        if voice_coach is None:
+            return jsonify({"success": False, "error": "Voice not configured"}), 400
+        threading.Thread(target=voice_coach.speak, args=(text,), daemon=True).start()
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[Speak] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/reset", methods=["POST"])
@@ -209,7 +267,7 @@ if __name__ == "__main__":
             openai_key=args.openai_key,
             exercise=args.exercise,
         )
-        print(f"AI Coach: {args.provider} (TTS handled by phone)")
+        print(f"AI Coach: {args.provider} (TTS handled by backend)")
     except Exception as e:
         print(f"Warning: Could not initialize AI coach: {e}")
         print("Continuing without AI coaching...")

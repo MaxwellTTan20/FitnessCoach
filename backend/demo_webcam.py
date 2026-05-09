@@ -21,6 +21,7 @@ import cv2
 
 from analyzer import SquatAnalyzer, PushupAnalyzer
 from thresholds import SQUAT_THRESHOLDS, PUSHUP_THRESHOLDS
+from voice import VoiceCoach
 
 EXERCISE_CLASSES = {
     "squat": SquatAnalyzer,
@@ -36,6 +37,17 @@ EXERCISE_THRESHOLDS = {
 VOICE_NAME = "Samantha"
 VOICE_RATE = 200
 
+# Optional backend-style VoiceCoach (ElevenLabs)
+_voice_coach = None
+try:
+    use_elevenlabs = os.environ.get("USE_ELEVENLABS_VOICE", "true").lower() not in {"0", "false", "no", "off"}
+    api_key = os.environ.get("ELEVENLABS_API_KEY")
+    voice_id = os.environ.get("ELEVENLABS_VOICE_ID")
+    if use_elevenlabs and api_key:
+        _voice_coach = VoiceCoach(api_key=api_key, voice_id=voice_id, use_elevenlabs=True)
+except Exception as e:
+    print(f"[Voice] Could not initialize VoiceCoach: {e}")
+
 _last_rep_data = None
 _last_ai_feedback = None
 _current_speech = None
@@ -46,6 +58,10 @@ def speak(text: str) -> None:
     global _current_speech
     with _speech_lock:
         try:
+            # Prefer VoiceCoach when available (ElevenLabs)
+            if _voice_coach is not None:
+                _voice_coach.speak(text)
+                return
             if _current_speech is not None and _current_speech.poll() is None:
                 _current_speech.terminate()
             _current_speech = subprocess.Popen(

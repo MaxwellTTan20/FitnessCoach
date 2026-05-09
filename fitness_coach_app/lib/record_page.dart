@@ -17,10 +17,7 @@ import 'user_profile.dart';
 // --- Config (edit these to change behaviour) ---
 const String _kAnthropicKey =
     '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';
-const String _kElevenLabsKey =
-    'sk_906b72eb783432101589d45a07007c281af45967b331a44b';
-// Arnold voice ID (free tier). To change: pick another ID from backend/voice.py VOICES dict.
-const String _kElevenLabsVoiceId = 'VR6AewLTigWG4xSOukaG';
+// ElevenLabs keys are handled by the backend. Do NOT embed API keys in the app.
 const String _kServerUrl = 'http://localhost:5000'; // change to your Mac's IP when on a real device
 const String _kProvider = 'claude';
 
@@ -311,27 +308,14 @@ class _RecordPageState extends State<RecordPage> {
     if (text.isEmpty || _isSpeaking) return;
     _isSpeaking = true;
     try {
+      // Request backend to speak the text (backend owns ElevenLabs key)
       final response = await http
-          .post(
-            Uri.parse(
-                'https://api.elevenlabs.io/v1/text-to-speech/$_kElevenLabsVoiceId'),
-            headers: {
-              'xi-api-key': _kElevenLabsKey,
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'text': text,
-              'model_id': 'eleven_turbo_v2_5',
-            }),
-          )
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final dir = await getTemporaryDirectory();
-        final file = File('${dir.path}/tts_feedback.mp3');
-        await file.writeAsBytes(response.bodyBytes);
-        await _audioPlayer.play(DeviceFileSource(file.path));
-      } else {
-        debugPrint('[TTS] ElevenLabs ${response.statusCode}: ${response.body}');
+          .post(Uri.parse('$_serverUrl/speak'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'text': text}))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) {
+        debugPrint('[TTS] Backend speak failed: ${response.statusCode} ${response.body}');
       }
     } catch (e) {
       debugPrint('[TTS] Error: $e');
@@ -366,7 +350,7 @@ class _RecordPageState extends State<RecordPage> {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         setState(() {
           _backendStatus = data['provider'] != null
-              ? 'AI: ${data['provider']} + ElevenLabs (phone)'
+              ? 'AI: ${data['provider']} (backend voice)'
               : 'Backend connected (no AI provider)';
         });
       } else {
