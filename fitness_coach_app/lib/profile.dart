@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 
 import 'auth_config.dart';
 import 'auth_page.dart';
+import 'movement_lab_theme.dart';
 import 'user_profile.dart';
 
 const List<String> _profileImages = [
   'lib/images/profile_pictures/panda.jpg',
   'lib/images/profile_pictures/perry.png',
-  'lib/images/profile_pictures/bigben.jpg'
+  'lib/images/profile_pictures/bigben.jpg',
 ];
 
 class ProfilePage extends StatefulWidget {
@@ -53,7 +54,10 @@ class _ProfilePageState extends State<ProfilePage> {
     if (mounted) {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile saved'), duration: Duration(seconds: 2)),
+        const SnackBar(
+          content: Text('Profile saved'),
+          duration: Duration(seconds: 2),
+        ),
       );
     }
   }
@@ -67,7 +71,10 @@ class _ProfilePageState extends State<ProfilePage> {
             _nameCtrl.text = _profile.name;
             _usernameCtrl.text = _profile.username;
             setState(() {
-              _avatarIndex = _profile.avatarIndex.clamp(0, _profileImages.length - 1);
+              _avatarIndex = _profile.avatarIndex.clamp(
+                0,
+                _profileImages.length - 1,
+              );
               _experience = _profile.experience;
             });
           },
@@ -78,9 +85,10 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _signOut() async {
     try {
-      await Auth0(kAuth0Domain, kAuth0ClientId)
-          .webAuthentication(scheme: kAuth0Scheme)
-          .logout();
+      await Auth0(
+        kAuth0Domain,
+        kAuth0ClientId,
+      ).webAuthentication(scheme: kAuth0Scheme).logout();
     } catch (_) {}
     await _profile.clear();
     _nameCtrl.text = '';
@@ -95,10 +103,8 @@ class _ProfilePageState extends State<ProfilePage> {
   void _showAvatarPicker() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF162033),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: MovementLabColors.porcelain,
+      shape: const RoundedRectangleBorder(),
       builder: (_) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
@@ -108,7 +114,11 @@ class _ProfilePageState extends State<ProfilePage> {
             children: [
               const Text(
                 'Choose Profile Picture',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+                style: TextStyle(
+                  color: MovementLabColors.ink,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
               const SizedBox(height: 20),
               Row(
@@ -126,11 +136,19 @@ class _ProfilePageState extends State<ProfilePage> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: selected ? Colors.cyanAccent : Colors.white30,
+                            color: selected
+                                ? MovementLabColors.trackTeal
+                                : MovementLabColors.lineStrong,
                             width: selected ? 3 : 1.5,
                           ),
                           boxShadow: selected
-                              ? [BoxShadow(color: Colors.cyanAccent.withValues(alpha: 0.3), blurRadius: 12)]
+                              ? [
+                                  BoxShadow(
+                                    color: MovementLabColors.trackTeal
+                                        .withValues(alpha: 0.18),
+                                    blurRadius: 12,
+                                  ),
+                                ]
                               : null,
                         ),
                         child: CircleAvatar(
@@ -155,19 +173,32 @@ class _ProfilePageState extends State<ProfilePage> {
     final bottomPad = MediaQuery.of(context).padding.bottom + 90;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0E1E31),
+      backgroundColor: MovementLabColors.porcelain,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('Profile', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text(
+          'Profile',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
         actions: [
           if (!_profile.isGuest)
             TextButton(
               onPressed: _saving ? null : _save,
               child: _saving
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.cyanAccent))
-                  : const Text('Save', style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.w700)),
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: MovementLabColors.trackTeal,
+                      ),
+                    )
+                  : const Text(
+                      'Save',
+                      style: TextStyle(
+                        color: MovementLabColors.trackTeal,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
             ),
         ],
       ),
@@ -188,18 +219,24 @@ class _ProfilePageState extends State<ProfilePage> {
                 margin: const EdgeInsets.only(bottom: 20),
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.orangeAccent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.4)),
+                  color: MovementLabColors.tempoSoft,
+                  border: Border.all(color: MovementLabColors.tempo),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline, color: Colors.orangeAccent, size: 18),
+                    const Icon(
+                      Icons.info_outline,
+                      color: MovementLabColors.tempo,
+                      size: 18,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Guest mode — changes are not saved between sessions.',
-                        style: TextStyle(color: Colors.orangeAccent, fontSize: isSmall ? 12 : 13),
+                        style: TextStyle(
+                          color: MovementLabColors.graphite,
+                          fontSize: isSmall ? 12 : 13,
+                        ),
                       ),
                     ),
                   ],
@@ -216,8 +253,10 @@ class _ProfilePageState extends State<ProfilePage> {
                     children: [
                       CircleAvatar(
                         radius: 48,
-                        backgroundColor: Colors.white12,
-                        backgroundImage: AssetImage(_profileImages[_avatarIndex]),
+                        backgroundColor: MovementLabColors.paperLine,
+                        backgroundImage: AssetImage(
+                          _profileImages[_avatarIndex],
+                        ),
                       ),
                       Positioned(
                         bottom: 0,
@@ -225,10 +264,13 @@ class _ProfilePageState extends State<ProfilePage> {
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: const BoxDecoration(
-                            color: Colors.cyanAccent,
-                            shape: BoxShape.circle,
+                            color: MovementLabColors.graphite,
                           ),
-                          child: const Icon(Icons.edit, size: 13, color: Color(0xFF0E1E31)),
+                          child: const Icon(
+                            Icons.edit,
+                            size: 13,
+                            color: MovementLabColors.white,
+                          ),
                         ),
                       ),
                     ],
@@ -262,20 +304,30 @@ class _ProfilePageState extends State<ProfilePage> {
                   onTap: () => setState(() => _experience = level),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 17,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
-                      color: selected ? Colors.cyanAccent.withValues(alpha: 0.15) : Colors.white10,
-                      borderRadius: BorderRadius.circular(24),
+                      color: selected
+                          ? MovementLabColors.tealSoft
+                          : MovementLabColors.white,
                       border: Border.all(
-                        color: selected ? Colors.cyanAccent : Colors.white24,
+                        color: selected
+                            ? MovementLabColors.trackTeal
+                            : MovementLabColors.lineStrong,
                         width: selected ? 1.5 : 1,
                       ),
                     ),
                     child: Text(
                       level,
                       style: TextStyle(
-                        color: selected ? Colors.cyanAccent : Colors.white70,
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                        color: selected
+                            ? MovementLabColors.trackTeal
+                            : MovementLabColors.muted,
+                        fontWeight: selected
+                            ? FontWeight.w900
+                            : FontWeight.w700,
                         fontSize: 14,
                       ),
                     ),
@@ -291,14 +343,14 @@ class _ProfilePageState extends State<ProfilePage> {
               _ActionButton(
                 label: 'Sign in to save progress',
                 icon: Icons.login,
-                color: Colors.cyanAccent,
+                color: MovementLabColors.trackTeal,
                 onTap: _goToSignIn,
               )
             else
               _ActionButton(
                 label: 'Sign out',
                 icon: Icons.logout,
-                color: Colors.redAccent,
+                color: MovementLabColors.correction,
                 onTap: _signOut,
               ),
           ],
@@ -308,33 +360,40 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _sectionLabel(String text) => Text(
-        text,
-        style: const TextStyle(
-            color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.8),
-      );
+    text,
+    style: const TextStyle(
+      color: MovementLabColors.muted,
+      fontSize: 12,
+      fontWeight: FontWeight.w900,
+      letterSpacing: 0.8,
+    ),
+  );
 
   Widget _field(TextEditingController ctrl, String hint) {
     return TextField(
       controller: ctrl,
-      style: const TextStyle(color: Colors.white),
+      style: const TextStyle(color: MovementLabColors.ink),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.white30),
+        hintStyle: const TextStyle(color: MovementLabColors.muted),
         filled: true,
-        fillColor: Colors.white10,
+        fillColor: MovementLabColors.white,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 12,
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Colors.white24),
+          borderSide: const BorderSide(color: MovementLabColors.lineStrong),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Colors.white24),
+          borderSide: const BorderSide(color: MovementLabColors.lineStrong),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Colors.cyanAccent, width: 1.5),
+          borderSide: const BorderSide(
+            color: MovementLabColors.trackTeal,
+            width: 1.5,
+          ),
         ),
       ),
     );
@@ -347,7 +406,12 @@ class _ActionButton extends StatelessWidget {
   final Color color;
   final VoidCallback? onTap;
 
-  const _ActionButton({required this.label, required this.icon, required this.color, this.onTap});
+  const _ActionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -358,7 +422,6 @@ class _ActionButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
         child: Row(
@@ -366,7 +429,14 @@ class _ActionButton extends StatelessWidget {
           children: [
             Icon(icon, color: color, size: 18),
             const SizedBox(width: 10),
-            Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 15)),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
           ],
         ),
       ),

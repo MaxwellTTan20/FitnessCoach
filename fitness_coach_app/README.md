@@ -23,7 +23,7 @@ A Flutter app with AI-powered squat analysis and voice coaching.
    Note: Set your API keys as environment variables:
    - `ANTHROPIC_API_KEY` for Claude
    - `OPENAI_API_KEY` for OpenAI
-   - `ELEVENLABS_API_KEY` for voice (optional)
+   - `ELEVENLABS_API_KEY` for backend voice playback (optional)
 
 4. Update the server URL in `lib/record_page.dart` if needed (default: `http://localhost:5000` for iOS simulator, `http://10.0.2.2:5000` for Android emulator). If running server on a different machine, use the IP address.
 
@@ -42,7 +42,7 @@ A Flutter app with AI-powered squat analysis and voice coaching.
 
 - Live camera feed with pose detection
 - Real-time squat form analysis
-- AI voice coaching feedback
+- AI voice coaching feedback handled by the backend
 - Rep counting and form correction
 - Aesthetic UI with lifting themes
 - Responsive design for mobile devices

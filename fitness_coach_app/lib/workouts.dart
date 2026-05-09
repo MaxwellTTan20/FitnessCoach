@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'movement_lab_theme.dart';
 import 'record_page.dart';
 import 'user_profile.dart';
 
@@ -30,17 +31,29 @@ class _WorkoutPlan {
 }
 
 const _singles = [
-  _SingleExercise('Just Squat',    Icons.airline_seat_legroom_extra, Color(0xFF1565C0)),
-  _SingleExercise('Just Bench',    Icons.fitness_center,              Color(0xFFC62828)),
-  _SingleExercise('Just Deadlift', Icons.hardware,                    Color(0xFF37474F)),
-  _SingleExercise('Just Push-up',  Icons.sports_martial_arts,         Color(0xFF2E7D32)),
+  _SingleExercise(
+    'Just Squat',
+    Icons.airline_seat_legroom_extra,
+    MovementLabColors.trackTeal,
+  ),
+  _SingleExercise(
+    'Just Bench',
+    Icons.fitness_center,
+    MovementLabColors.correction,
+  ),
+  _SingleExercise('Just Deadlift', Icons.hardware, MovementLabColors.graphite),
+  _SingleExercise(
+    'Just Push-up',
+    Icons.sports_martial_arts,
+    MovementLabColors.correct,
+  ),
 ];
 
 const _plans = [
   _WorkoutPlan(
     name: 'Push Day',
     icon: Icons.fitness_center,
-    color: Color(0xFFC62828),
+    color: MovementLabColors.correction,
     sets: ['4 × 8  Bench', '3 × 15  Push-up'],
     intensity: 3,
     description: 'Classic press session targeting chest and triceps.',
@@ -48,7 +61,7 @@ const _plans = [
   _WorkoutPlan(
     name: 'Leg Day',
     icon: Icons.airline_seat_legroom_extra,
-    color: Color(0xFF1565C0),
+    color: MovementLabColors.trackTeal,
     sets: ['4 × 6  Squat', '3 × 5  Deadlift'],
     intensity: 5,
     description: 'Heavy compound lower-body work for maximum strength.',
@@ -56,7 +69,7 @@ const _plans = [
   _WorkoutPlan(
     name: 'Strength Endurance',
     icon: Icons.loop,
-    color: Color(0xFF00695C),
+    color: MovementLabColors.correct,
     sets: ['4 × 15  Squat', '4 × 20  Push-up'],
     intensity: 2,
     description: 'High-rep conditioning to build work capacity.',
@@ -64,7 +77,7 @@ const _plans = [
   _WorkoutPlan(
     name: 'Upper Power',
     icon: Icons.bolt,
-    color: Color(0xFFF57F17),
+    color: MovementLabColors.tempo,
     sets: ['5 × 5  Bench', '3 × 5  Deadlift'],
     intensity: 4,
     description: 'Heavy pressing paired with a posterior chain pull.',
@@ -72,7 +85,7 @@ const _plans = [
   _WorkoutPlan(
     name: 'Power Trio',
     icon: Icons.emoji_events,
-    color: Color(0xFF6A1B9A),
+    color: MovementLabColors.graphite,
     sets: ['3 × 5  Squat', '3 × 5  Bench', '3 × 5  Deadlift'],
     intensity: 5,
     description: 'The classic powerlifting three. Pure strength focus.',
@@ -80,8 +93,13 @@ const _plans = [
   _WorkoutPlan(
     name: 'Full Body',
     icon: Icons.all_inclusive,
-    color: Color(0xFF0F4C81),
-    sets: ['3 × 8  Squat', '4 × 8  Bench', '3 × 5  Deadlift', '3 × 15  Push-up'],
+    color: MovementLabColors.trackTeal,
+    sets: [
+      '3 × 8  Squat',
+      '4 × 8  Bench',
+      '3 × 5  Deadlift',
+      '3 × 15  Push-up',
+    ],
     intensity: 4,
     description: 'Every major compound movement in one session.',
   ),
@@ -97,20 +115,12 @@ class WorkoutsPage extends StatelessWidget {
     final bottomPad = MediaQuery.of(context).padding.bottom + 90;
 
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF0F4C81), Color(0xFF0E1E31), Color(0xFF0E1E31)],
-          stops: [0.0, 0.35, 1.0],
-        ),
-      ),
+      color: MovementLabColors.porcelain,
       child: SafeArea(
         bottom: false,
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-            // ── Header ──────────────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
@@ -120,28 +130,40 @@ class WorkoutsPage extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: const [
+                          LabLabel('Training menu'),
+                          SizedBox(height: 8),
                           Text(
                             'Workouts',
                             style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 30,
-                                fontWeight: FontWeight.w800),
+                              color: MovementLabColors.ink,
+                              fontSize: 38,
+                              fontWeight: FontWeight.w900,
+                              height: 0.95,
+                            ),
                           ),
                           SizedBox(height: 4),
                           Text(
-                            'Choose a session to begin',
-                            style: TextStyle(color: Colors.white60, fontSize: 14),
+                            'Choose a session to measure',
+                            style: TextStyle(
+                              color: MovementLabColors.muted,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ],
                       ),
                     ),
                     Container(
                       decoration: BoxDecoration(
-                          color: Colors.white12,
-                          borderRadius: BorderRadius.circular(14)),
+                        color: MovementLabColors.white,
+                        border: Border.all(color: MovementLabColors.graphite),
+                      ),
                       padding: const EdgeInsets.all(10),
-                      child: const Icon(Icons.fitness_center,
-                          color: Colors.white, size: 24),
+                      child: const Icon(
+                        Icons.fitness_center,
+                        color: MovementLabColors.graphite,
+                        size: 24,
+                      ),
                     ),
                   ],
                 ),
@@ -155,10 +177,11 @@ class WorkoutsPage extends StatelessWidget {
                 child: Text(
                   'QUICK SINGLES',
                   style: TextStyle(
-                      color: Colors.white54,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2),
+                    color: MovementLabColors.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
                 ),
               ),
             ),
@@ -173,15 +196,23 @@ class WorkoutsPage extends StatelessWidget {
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
                   childAspectRatio: 2.8,
-                  children: _singles.asMap().entries.map((e) => _SingleCard(
-                    exercise: e.value,
-                    onTap: () {
-                      AppProfile.instance.setExercise(e.key).ignore();
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const RecordPage()),
-                      );
-                    },
-                  )).toList(),
+                  children: _singles
+                      .asMap()
+                      .entries
+                      .map(
+                        (e) => _SingleCard(
+                          exercise: e.value,
+                          onTap: () {
+                            AppProfile.instance.setExercise(e.key).ignore();
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const RecordPage(),
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                      .toList(),
                 ),
               ),
             ),
@@ -193,10 +224,11 @@ class WorkoutsPage extends StatelessWidget {
                 child: Text(
                   'WORKOUT PROGRAMS',
                   style: TextStyle(
-                      color: Colors.white54,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2),
+                    color: MovementLabColors.muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
                 ),
               ),
             ),
@@ -232,10 +264,11 @@ class _SingleCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: exercise.color.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(16),
+          color: MovementLabColors.white,
           border: Border.all(
-              color: exercise.color.withValues(alpha: 0.4), width: 1.2),
+            color: exercise.color.withValues(alpha: 0.4),
+            width: 1.2,
+          ),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Row(
@@ -244,7 +277,9 @@ class _SingleCard extends StatelessWidget {
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: exercise.color.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: exercise.color.withValues(alpha: 0.35),
+                ),
               ),
               child: Icon(exercise.icon, color: exercise.color, size: 18),
             ),
@@ -253,9 +288,10 @@ class _SingleCard extends StatelessWidget {
               child: Text(
                 exercise.name,
                 style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600),
+                  color: MovementLabColors.graphite,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -278,10 +314,11 @@ class _PlanCard extends StatelessWidget {
       onTap: () {},
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF162033),
-          borderRadius: BorderRadius.circular(20),
-          border:
-              Border.all(color: plan.color.withValues(alpha: 0.3), width: 1.2),
+          color: MovementLabColors.white,
+          border: Border.all(
+            color: plan.color.withValues(alpha: 0.3),
+            width: 1.2,
+          ),
         ),
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -292,7 +329,7 @@ class _PlanCard extends StatelessWidget {
               height: 48,
               decoration: BoxDecoration(
                 color: plan.color.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: plan.color.withValues(alpha: 0.28)),
               ),
               child: Icon(plan.icon, color: plan.color, size: 24),
             ),
@@ -307,9 +344,10 @@ class _PlanCard extends StatelessWidget {
                         child: Text(
                           plan.name,
                           style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700),
+                            color: MovementLabColors.graphite,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                       _IntensityBar(level: plan.intensity),
@@ -327,7 +365,10 @@ class _PlanCard extends StatelessWidget {
                   Text(
                     plan.description,
                     style: const TextStyle(
-                        color: Colors.white54, fontSize: 12, height: 1.4),
+                      color: MovementLabColors.muted,
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
                   ),
                 ],
               ),
@@ -346,10 +387,10 @@ class _IntensityBar extends StatelessWidget {
   const _IntensityBar({required this.level});
 
   Color _barColor() {
-    if (level <= 2) return const Color(0xFF4CAF50);
-    if (level == 3) return const Color(0xFFFFC107);
-    if (level == 4) return const Color(0xFFFF7043);
-    return const Color(0xFFEF5350);
+    if (level <= 2) return MovementLabColors.correct;
+    if (level == 3) return MovementLabColors.tempo;
+    if (level == 4) return MovementLabColors.correction;
+    return MovementLabColors.correction;
   }
 
   @override
@@ -363,8 +404,7 @@ class _IntensityBar extends StatelessWidget {
           height: 12,
           margin: const EdgeInsets.only(left: 3),
           decoration: BoxDecoration(
-            color: i < level ? color : Colors.white12,
-            borderRadius: BorderRadius.circular(3),
+            color: i < level ? color : MovementLabColors.line,
           ),
         );
       }),
@@ -385,13 +425,15 @@ class _SetTag extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
       ),
       child: Text(
         label,
         style: TextStyle(
-            color: color, fontSize: 11, fontWeight: FontWeight.w600),
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

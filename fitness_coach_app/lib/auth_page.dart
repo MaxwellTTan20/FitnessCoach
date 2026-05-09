@@ -2,6 +2,7 @@ import 'package:auth0_flutter/auth0_flutter.dart';
 import 'package:flutter/material.dart';
 
 import 'auth_config.dart';
+import 'movement_lab_theme.dart';
 import 'user_profile.dart';
 
 class AuthPage extends StatefulWidget {
@@ -18,18 +19,22 @@ class _AuthPageState extends State<AuthPage> {
   String? _error;
 
   Future<void> _signInWithGoogle() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final credentials = await _auth0
           .webAuthentication(scheme: 'com.maxwelltan.fitnessCoachApp')
           .login(parameters: {'connection': 'google-oauth2'});
       final profile = AppProfile.instance;
-      await profile.load();              // load cached prefs (name, avatar, etc.) first
-      profile.isGuest = false;           // then set auth data so load() doesn't overwrite it
+      await profile.load(); // load cached prefs (name, avatar, etc.) first
+      profile.isGuest =
+          false; // then set auth data so load() doesn't overwrite it
       profile.auth0UserId = credentials.user.sub;
       profile.email = credentials.user.email;
       if (credentials.user.name != null) profile.name = credentials.user.name!;
-      await profile.save();              // persist auth0UserId + isGuest to prefs
+      await profile.save(); // persist auth0UserId + isGuest to prefs
       await profile.loadFromFirestore(); // overlay with cloud data
       widget.onAuthenticated();
     } catch (e) {
@@ -48,13 +53,7 @@ class _AuthPageState extends State<AuthPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF0A1628), Color(0xFF0F2340), Color(0xFF0E1E31)],
-          ),
-        ),
+        color: MovementLabColors.porcelain,
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -65,33 +64,55 @@ class _AuthPageState extends State<AuthPage> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Colors.cyanAccent.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.3), width: 1.5),
+                    color: MovementLabColors.white,
+                    border: Border.all(
+                      color: MovementLabColors.graphite,
+                      width: 2,
+                    ),
                   ),
-                  child: const Icon(Icons.fitness_center, color: Colors.cyanAccent, size: 48),
+                  child: const Icon(
+                    Icons.science_outlined,
+                    color: MovementLabColors.graphite,
+                    size: 48,
+                  ),
                 ),
                 const SizedBox(height: 24),
                 const Text(
                   'Lift & Flow',
-                  style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+                  style: TextStyle(
+                    color: MovementLabColors.ink,
+                    fontSize: 42,
+                    fontWeight: FontWeight.w900,
+                    height: 0.95,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'AI-powered form coaching',
-                  style: TextStyle(color: Colors.white54, fontSize: 16),
+                  'Biomechanical form coaching',
+                  style: TextStyle(
+                    color: MovementLabColors.muted,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
+                const SizedBox(height: 22),
+                const CalibrationRule(),
                 const Spacer(flex: 2),
                 // ── Buttons ───────────────────────────────────────────────
                 if (_error != null) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.redAccent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
+                      color: MovementLabColors.correctionSoft,
+                      border: Border.all(color: MovementLabColors.correction),
                     ),
-                    child: Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+                    child: Text(
+                      _error!,
+                      style: const TextStyle(
+                        color: MovementLabColors.correction,
+                        fontSize: 13,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -106,7 +127,11 @@ class _AuthPageState extends State<AuthPage> {
                 _AuthButton(
                   onTap: _loading ? null : _continueAsGuest,
                   loading: false,
-                  icon: const Icon(Icons.person_outline, color: Colors.white70, size: 20),
+                  icon: const Icon(
+                    Icons.person_outline,
+                    color: MovementLabColors.graphite,
+                    size: 20,
+                  ),
                   label: 'Continue as Guest',
                   primary: false,
                 ),
@@ -114,7 +139,10 @@ class _AuthPageState extends State<AuthPage> {
                 const Text(
                   'Guest sessions are not saved between app launches.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white38, fontSize: 12),
+                  style: TextStyle(
+                    color: MovementLabColors.muted,
+                    fontSize: 12,
+                  ),
                 ),
                 const Spacer(),
               ],
@@ -129,9 +157,16 @@ class _AuthPageState extends State<AuthPage> {
     return Container(
       width: 20,
       height: 20,
-      decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+      decoration: const BoxDecoration(color: MovementLabColors.white),
       alignment: Alignment.center,
-      child: const Text('G', style: TextStyle(color: Color(0xFF4285F4), fontWeight: FontWeight.w800, fontSize: 13)),
+      child: const Text(
+        'G',
+        style: TextStyle(
+          color: MovementLabColors.graphite,
+          fontWeight: FontWeight.w900,
+          fontSize: 13,
+        ),
+      ),
     );
   }
 }
@@ -160,12 +195,21 @@ class _AuthButton extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: primary ? Colors.white : Colors.white.withValues(alpha: 0.07),
-          borderRadius: BorderRadius.circular(16),
-          border: primary ? null : Border.all(color: Colors.white24),
+          color: primary ? MovementLabColors.graphite : MovementLabColors.white,
+          border: Border.all(
+            color: primary
+                ? MovementLabColors.graphite
+                : MovementLabColors.lineStrong,
+          ),
         ),
         child: loading
-            ? const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
+            ? const Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -174,8 +218,10 @@ class _AuthButton extends StatelessWidget {
                   Text(
                     label,
                     style: TextStyle(
-                      color: primary ? const Color(0xFF0A1628) : Colors.white70,
-                      fontWeight: FontWeight.w600,
+                      color: primary
+                          ? MovementLabColors.white
+                          : MovementLabColors.graphite,
+                      fontWeight: FontWeight.w900,
                       fontSize: 15,
                     ),
                   ),

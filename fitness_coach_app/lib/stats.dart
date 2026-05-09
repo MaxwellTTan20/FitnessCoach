@@ -2,15 +2,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'movement_lab_theme.dart';
 import 'user_profile.dart';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const _exerciseColors = [
-  Color(0xFF1E88E5), // Squat  – blue
-  Color(0xFFE53935), // Bench  – red
-  Color(0xFF78909C), // Deadlift – blue-grey
-  Color(0xFF43A047), // Push-up – green
+  MovementLabColors.trackTeal,
+  MovementLabColors.correction,
+  MovementLabColors.graphite,
+  MovementLabColors.correct,
 ];
 
 enum _Period { day, week, month, year }
@@ -18,19 +19,27 @@ enum _Period { day, week, month, year }
 extension _PeriodExt on _Period {
   String get label {
     switch (this) {
-      case _Period.day:   return 'Day';
-      case _Period.week:  return 'Week';
-      case _Period.month: return 'Month';
-      case _Period.year:  return 'Year';
+      case _Period.day:
+        return 'Day';
+      case _Period.week:
+        return 'Week';
+      case _Period.month:
+        return 'Month';
+      case _Period.year:
+        return 'Year';
     }
   }
 
   List<String> get xLabels {
     switch (this) {
-      case _Period.day:   return ['6am', '9am', '12pm', '3pm', '6pm', '9pm'];
-      case _Period.week:  return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      case _Period.month: return ['W1', 'W2', 'W3', 'W4'];
-      case _Period.year:  return ['Jan', 'Mar', 'May', 'Jul', 'Sep', 'Nov'];
+      case _Period.day:
+        return ['6am', '9am', '12pm', '3pm', '6pm', '9pm'];
+      case _Period.week:
+        return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      case _Period.month:
+        return ['W1', 'W2', 'W3', 'W4'];
+      case _Period.year:
+        return ['Jan', 'Mar', 'May', 'Jul', 'Sep', 'Nov'];
     }
   }
 }
@@ -60,14 +69,7 @@ class _StatsPageState extends State<StatsPage> {
     final bottomPad = MediaQuery.of(context).padding.bottom + 90;
 
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF0F4C81), Color(0xFF0E1E31), Color(0xFF0E1E31)],
-          stops: [0.0, 0.32, 1.0],
-        ),
-      ),
+      color: MovementLabColors.porcelain,
       child: SafeArea(
         bottom: false,
         child: ListView(
@@ -75,6 +77,8 @@ class _StatsPageState extends State<StatsPage> {
           physics: const BouncingScrollPhysics(),
           children: [
             _buildHeader(),
+            const SizedBox(height: 20),
+            const CalibrationRule(),
             const SizedBox(height: 20),
             _buildPeriodToggle(),
             const SizedBox(height: 28),
@@ -127,23 +131,38 @@ class _StatsPageState extends State<StatsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
-              Text('Stats',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 30,
-                      fontWeight: FontWeight.w800)),
+              Text(
+                'Stats',
+                style: TextStyle(
+                  color: MovementLabColors.ink,
+                  fontSize: 38,
+                  height: 0.95,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
               SizedBox(height: 4),
-              Text('Track your progress',
-                  style: TextStyle(color: Colors.white60, fontSize: 14)),
+              Text(
+                'Track your progress',
+                style: TextStyle(
+                  color: MovementLabColors.muted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ],
           ),
         ),
         Container(
           decoration: BoxDecoration(
-              color: Colors.white12,
-              borderRadius: BorderRadius.circular(14)),
+            color: MovementLabColors.white,
+            border: Border.all(color: MovementLabColors.graphite),
+          ),
           padding: const EdgeInsets.all(10),
-          child: const Icon(Icons.show_chart, color: Colors.white, size: 24),
+          child: const Icon(
+            Icons.show_chart,
+            color: MovementLabColors.graphite,
+            size: 24,
+          ),
         ),
       ],
     );
@@ -154,7 +173,9 @@ class _StatsPageState extends State<StatsPage> {
   Widget _buildPeriodToggle() {
     return Container(
       decoration: BoxDecoration(
-          color: Colors.white10, borderRadius: BorderRadius.circular(16)),
+        color: MovementLabColors.white,
+        border: Border.all(color: MovementLabColors.lineStrong),
+      ),
       padding: const EdgeInsets.all(4),
       child: Row(
         children: _Period.values.map((p) {
@@ -166,14 +187,15 @@ class _StatsPageState extends State<StatsPage> {
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(vertical: 9),
                 decoration: BoxDecoration(
-                  color: sel ? const Color(0xFF0F4C81) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
+                  color: sel ? MovementLabColors.graphite : Colors.transparent,
                 ),
                 alignment: Alignment.center,
                 child: Text(
                   p.label,
                   style: TextStyle(
-                    color: sel ? Colors.white : Colors.white54,
+                    color: sel
+                        ? MovementLabColors.white
+                        : MovementLabColors.muted,
                     fontSize: 13,
                     fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
                   ),
@@ -200,9 +222,8 @@ class _StatsPageState extends State<StatsPage> {
       children: List.generate(4, (i) {
         return Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF162033),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white10),
+            color: MovementLabColors.white,
+            border: Border.all(color: MovementLabColors.line),
           ),
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -220,9 +241,10 @@ class _StatsPageState extends State<StatsPage> {
                     child: Text(
                       '${(_accuracy[i] * 100).round()}%',
                       style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700),
+                        color: MovementLabColors.graphite,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -231,9 +253,10 @@ class _StatsPageState extends State<StatsPage> {
               Text(
                 AppProfile.exercises[i],
                 style: TextStyle(
-                    color: _exerciseColors[i],
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600),
+                  color: _exerciseColors[i],
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -249,20 +272,22 @@ class _StatsPageState extends State<StatsPage> {
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFF162033),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white10),
+        color: MovementLabColors.white,
+        border: Border.all(color: MovementLabColors.line),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.orange.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(16),
+              color: MovementLabColors.tempoSoft,
+              border: Border.all(color: MovementLabColors.tempo),
             ),
-            child: const Icon(Icons.local_fire_department,
-                color: Colors.orange, size: 28),
+            child: const Icon(
+              Icons.local_fire_department,
+              color: MovementLabColors.tempo,
+              size: 28,
+            ),
           ),
           const SizedBox(width: 20),
           Column(
@@ -271,14 +296,15 @@ class _StatsPageState extends State<StatsPage> {
               Text(
                 '$_calories kcal',
                 style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800),
+                  color: MovementLabColors.graphite,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 4),
               const Text(
                 'Approximate calories burned',
-                style: TextStyle(color: Colors.white54, fontSize: 12),
+                style: TextStyle(color: MovementLabColors.muted, fontSize: 12),
               ),
             ],
           ),
@@ -290,22 +316,22 @@ class _StatsPageState extends State<StatsPage> {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   Widget _label(String text) => Text(
-        text,
-        style: const TextStyle(
-            color: Colors.white54,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.2),
-      );
+    text,
+    style: const TextStyle(
+      color: MovementLabColors.muted,
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.2,
+    ),
+  );
 
   Widget _chartCard({required double height, required Widget child}) {
     return Container(
       height: height,
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF162033),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white10),
+        color: MovementLabColors.white,
+        border: Border.all(color: MovementLabColors.line),
       ),
       child: child,
     );
@@ -336,18 +362,26 @@ class _BarChartPainter extends CustomPainter {
     final maxVal = values.reduce(math.max).clamp(1, 9999);
 
     final gridPaint = Paint()
-      ..color = Colors.white10
+      ..color = MovementLabColors.line
       ..strokeWidth = 1;
-    final textStyle = const TextStyle(color: Colors.white38, fontSize: 10);
+    final textStyle = const TextStyle(
+      color: MovementLabColors.muted,
+      fontSize: 10,
+    );
 
     // Horizontal grid lines + Y axis labels
     for (int i = 0; i <= gridLines; i++) {
       final y = chartH * (1 - i / gridLines);
-      canvas.drawLine(
-          Offset(axisW, y), Offset(size.width, y), gridPaint);
+      canvas.drawLine(Offset(axisW, y), Offset(size.width, y), gridPaint);
       final label = (maxVal * i ~/ gridLines).toString();
-      _drawText(canvas, label, Offset(0, y - 7), textStyle,
-          width: axisW - 4, align: TextAlign.right);
+      _drawText(
+        canvas,
+        label,
+        Offset(0, y - 7),
+        textStyle,
+        width: axisW - 4,
+        align: TextAlign.right,
+      );
     }
 
     // Bars
@@ -363,12 +397,15 @@ class _BarChartPainter extends CustomPainter {
       final top = chartH - barH;
 
       final barPaint = Paint()
-        ..color = values[i] == 0
-            ? colors[i].withValues(alpha: 0.2)
-            : colors[i];
+        ..color = values[i] == 0 ? colors[i].withValues(alpha: 0.2) : colors[i];
 
       final rr = RRect.fromLTRBR(
-          left, top, right, chartH, const Radius.circular(6));
+        left,
+        top,
+        right,
+        chartH,
+        const Radius.circular(6),
+      );
       canvas.drawRRect(rr, barPaint);
 
       // X label
@@ -377,9 +414,10 @@ class _BarChartPainter extends CustomPainter {
         labels[i],
         Offset(left, chartH + 5),
         TextStyle(
-            color: colors[i].withValues(alpha: 0.85),
-            fontSize: 10,
-            fontWeight: FontWeight.w600),
+          color: colors[i].withValues(alpha: 0.85),
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
         width: right - left,
         align: TextAlign.center,
       );
@@ -387,8 +425,7 @@ class _BarChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_BarChartPainter old) =>
-      old.values != values;
+  bool shouldRepaint(_BarChartPainter old) => old.values != values;
 }
 
 // ── Line chart painter ────────────────────────────────────────────────────────
@@ -417,17 +454,25 @@ class _LineChartPainter extends CustomPainter {
     final chartW = size.width - axisW;
 
     final gridPaint = Paint()
-      ..color = Colors.white10
+      ..color = MovementLabColors.line
       ..strokeWidth = 1;
-    final axisTextStyle =
-        const TextStyle(color: Colors.white38, fontSize: 10);
+    final axisTextStyle = const TextStyle(
+      color: MovementLabColors.muted,
+      fontSize: 10,
+    );
 
     // Grid lines + Y labels (0–100%)
     for (int i = 0; i <= gridLines; i++) {
       final y = legendH + chartH * (1 - i / gridLines);
       canvas.drawLine(Offset(axisW, y), Offset(size.width, y), gridPaint);
-      _drawText(canvas, '${i * 25}%', Offset(0, y - 7), axisTextStyle,
-          width: axisW - 4, align: TextAlign.right);
+      _drawText(
+        canvas,
+        '${i * 25}%',
+        Offset(0, y - 7),
+        axisTextStyle,
+        width: axisW - 4,
+        align: TextAlign.right,
+      );
     }
 
     // X labels
@@ -485,9 +530,10 @@ class _LineChartPainter extends CustomPainter {
         exerciseLabels[s],
         Offset(lx + 12, 4),
         TextStyle(
-            color: colors[s].withValues(alpha: 0.9),
-            fontSize: 10,
-            fontWeight: FontWeight.w600),
+          color: colors[s].withValues(alpha: 0.9),
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
         width: 54,
       );
       lx += 64;
@@ -516,12 +562,13 @@ class _ArcPainter extends CustomPainter {
 
     // Track
     canvas.drawCircle(
-        Offset(cx, cy),
-        radius,
-        Paint()
-          ..color = Colors.white12
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = strokeW);
+      Offset(cx, cy),
+      radius,
+      Paint()
+        ..color = MovementLabColors.line
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeW,
+    );
 
     // Fill
     if (value > 0) {

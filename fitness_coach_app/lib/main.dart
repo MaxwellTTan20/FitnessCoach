@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'firebase_options.dart';
 
 import 'auth_page.dart';
+import 'movement_lab_theme.dart';
 import 'profile.dart';
 import 'record_page.dart';
 import 'stats.dart';
@@ -25,11 +26,7 @@ class MainApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Fitness Coach',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueGrey, brightness: Brightness.dark),
-        useMaterial3: true,
-      ),
+      theme: buildMovementLabTheme(),
       home: const _AuthGate(),
     );
   }
@@ -77,7 +74,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       extendBody: true,
       resizeToAvoidBottomInset: false,
-      backgroundColor: const Color(0xFFEAF2FA),
+      backgroundColor: MovementLabColors.porcelain,
       body: IndexedStack(
         index: _selectedIndex,
         children: [
@@ -89,30 +86,49 @@ class _HomePageState extends State<HomePage> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF0F4C81),
-        elevation: 16,
-        splashColor: const Color(0xFF5B7FA3),
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const RecordPage()),
-        ),
-        child: const Icon(Icons.camera_alt, size: 30),
+        onPressed: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const RecordPage())),
+        child: const Icon(Icons.camera_alt_outlined, size: 28),
       ),
       bottomNavigationBar: BottomAppBar(
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 8,
-        color: const Color.fromRGBO(255, 255, 255, 0.95),
-        elevation: 14,
+        shape: const AutomaticNotchedShape(
+          RoundedRectangleBorder(),
+          RoundedRectangleBorder(),
+        ),
+        notchMargin: 6,
+        color: MovementLabColors.white,
+        elevation: 0,
         child: SizedBox(
           height: 60,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _NavItem(icon: Icons.home, label: 'Home', selected: _selectedIndex == 0, onTap: () => setState(() => _selectedIndex = 0)),
-              _NavItem(icon: Icons.fitness_center, label: 'Workouts', selected: _selectedIndex == 1, onTap: () => setState(() => _selectedIndex = 1)),
+              _NavItem(
+                icon: Icons.home,
+                label: 'Home',
+                selected: _selectedIndex == 0,
+                onTap: () => setState(() => _selectedIndex = 0),
+              ),
+              _NavItem(
+                icon: Icons.fitness_center,
+                label: 'Workouts',
+                selected: _selectedIndex == 1,
+                onTap: () => setState(() => _selectedIndex = 1),
+              ),
               const SizedBox(width: 48),
-              _NavItem(icon: Icons.show_chart, label: 'Stats', selected: _selectedIndex == 2, onTap: () => setState(() => _selectedIndex = 2)),
-              _NavItem(icon: Icons.person, label: 'Profile', selected: _selectedIndex == 3, onTap: () => setState(() => _selectedIndex = 3)),
+              _NavItem(
+                icon: Icons.show_chart,
+                label: 'Stats',
+                selected: _selectedIndex == 2,
+                onTap: () => setState(() => _selectedIndex = 2),
+              ),
+              _NavItem(
+                icon: Icons.person,
+                label: 'Profile',
+                selected: _selectedIndex == 3,
+                onTap: () => setState(() => _selectedIndex = 3),
+              ),
             ],
           ),
         ),
@@ -129,13 +145,7 @@ class _HomeTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF0F4C81), Color(0xFF5B7FA3), Color(0xFFF4F7FB)],
-        ),
-      ),
+      color: MovementLabColors.porcelain,
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -151,59 +161,111 @@ class _HomeTab extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: const [
-                          Text('Lift & Flow', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w700)),
+                          LabLabel('Movement Lab'),
+                          SizedBox(height: 10),
+                          Text(
+                            'Lift & Flow',
+                            style: TextStyle(
+                              color: MovementLabColors.ink,
+                              fontSize: 42,
+                              fontWeight: FontWeight.w900,
+                              height: 0.95,
+                            ),
+                          ),
                           SizedBox(height: 8),
-                          Text('Train with confident motion.', style: TextStyle(color: Colors.white70, fontSize: 16)),
+                          Text(
+                            'Train with measured motion.',
+                            style: TextStyle(
+                              color: MovementLabColors.muted,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ],
                       ),
                     ),
                     const SizedBox(width: 12),
                     Container(
-                      decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(16)),
+                      decoration: BoxDecoration(
+                        color: MovementLabColors.white,
+                        border: Border.all(
+                          color: MovementLabColors.graphite,
+                          width: 1.5,
+                        ),
+                      ),
                       padding: const EdgeInsets.all(12),
-                      child: const Icon(Icons.fitness_center, color: Colors.white, size: 28),
+                      child: const Icon(
+                        Icons.science_outlined,
+                        color: MovementLabColors.graphite,
+                        size: 28,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 28),
-                Container(
-                  width: double.infinity,
+                LabPanel(
                   padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color.fromRGBO(255, 255, 255, 0.9),
-                    borderRadius: BorderRadius.circular(32),
-                    boxShadow: const [BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.12), blurRadius: 24, offset: Offset(0, 12))],
-                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: const [
-                          Icon(Icons.bar_chart, color: Color(0xFF0F4C81), size: 28),
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.straighten,
+                            color: MovementLabColors.trackTeal,
+                            size: 28,
+                          ),
                           SizedBox(width: 12),
-                          Text('Strength Focus', style: TextStyle(color: Color(0xFF0F4C81), fontSize: 20, fontWeight: FontWeight.w700)),
+                          Text(
+                            'Readiness instrument',
+                            style: TextStyle(
+                              color: MovementLabColors.ink,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
                       const Text(
-                        'Aesthetically designed to keep your lifts on track. Tap the camera to record and review your form in real time.',
-                        style: TextStyle(color: Color(0xFF526A86), fontSize: 16, height: 1.5),
+                        'Tap the camera to measure live movement, track joint angles, and receive short form cues while you train.',
+                        style: TextStyle(
+                          color: MovementLabColors.muted,
+                          fontSize: 16,
+                          height: 1.5,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                       const SizedBox(height: 20),
+                      const CalibrationRule(),
+                      const SizedBox(height: 18),
                       Wrap(
                         spacing: 12,
                         runSpacing: 12,
                         children: const [
-                          _FeatureBadge(icon: Icons.sports_martial_arts, label: 'Power'),
-                          _FeatureBadge(icon: Icons.shield, label: 'Focus'),
-                          _FeatureBadge(icon: Icons.flash_on, label: 'Drive'),
+                          _FeatureBadge(icon: Icons.sensors, label: 'Track'),
+                          _FeatureBadge(
+                            icon: Icons.check_circle_outline,
+                            label: 'Correct',
+                          ),
+                          _FeatureBadge(
+                            icon: Icons.timer_outlined,
+                            label: 'Tempo',
+                          ),
                         ],
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 26),
-                const Text("Today's warm-up", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700)),
+                const Text(
+                  "Today's movement plan",
+                  style: TextStyle(
+                    color: MovementLabColors.ink,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
                 const SizedBox(height: 14),
                 GridView.count(
                   shrinkWrap: true,
@@ -213,10 +275,26 @@ class _HomeTab extends StatelessWidget {
                   crossAxisSpacing: 16,
                   childAspectRatio: screenWidth < 360 ? 3 / 1 : 4 / 3,
                   children: const [
-                    _WorkoutTile(title: 'Squat', description: 'Warm-up: 1x3', icon: Icons.fitness_center),
-                    _WorkoutTile(title: 'Bench', description: 'Warm-up: 1x3', icon: Icons.shield_moon),
-                    _WorkoutTile(title: 'Deadlift', description: 'Warm-up: 1x3', icon: Icons.timeline),
-                    _WorkoutTile(title: 'Push-ups', description: 'Warm-up: 1x3', icon: Icons.self_improvement),
+                    _WorkoutTile(
+                      title: 'Squat',
+                      description: 'Depth and knee path',
+                      icon: Icons.airline_seat_legroom_extra,
+                    ),
+                    _WorkoutTile(
+                      title: 'Bench',
+                      description: 'Coming soon',
+                      icon: Icons.fitness_center,
+                    ),
+                    _WorkoutTile(
+                      title: 'Deadlift',
+                      description: 'Coming soon',
+                      icon: Icons.timeline,
+                    ),
+                    _WorkoutTile(
+                      title: 'Push-up',
+                      description: 'Body line and elbow angle',
+                      icon: Icons.self_improvement,
+                    ),
                   ],
                 ),
               ],
@@ -228,7 +306,6 @@ class _HomeTab extends StatelessWidget {
   }
 }
 
-
 // ── Shared widgets ────────────────────────────────────────────────────────────
 class _FeatureBadge extends StatelessWidget {
   final IconData icon;
@@ -239,13 +316,22 @@ class _FeatureBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(color: Colors.blueGrey.shade50, borderRadius: BorderRadius.circular(18)),
+      decoration: BoxDecoration(
+        color: MovementLabColors.paper,
+        border: Border.all(color: MovementLabColors.lineStrong),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: const Color(0xFF0F4C81)),
+          Icon(icon, size: 18, color: MovementLabColors.trackTeal),
           const SizedBox(width: 8),
-          Text(label, style: const TextStyle(color: Color(0xFF2B4A68), fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: const TextStyle(
+              color: MovementLabColors.graphite,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ],
       ),
     );
@@ -256,15 +342,18 @@ class _WorkoutTile extends StatelessWidget {
   final String title;
   final IconData icon;
   final String description;
-  const _WorkoutTile({required this.title, required this.description, required this.icon});
+  const _WorkoutTile({
+    required this.title,
+    required this.description,
+    required this.icon,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color.fromRGBO(255, 255, 255, 0.92),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xB3FFFFFF), width: 1.2),
+        color: MovementLabColors.white,
+        border: Border.all(color: MovementLabColors.lineStrong, width: 1.2),
       ),
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -273,16 +362,19 @@ class _WorkoutTile extends StatelessWidget {
           Row(
             children: [
               Container(
-                decoration: BoxDecoration(color: const Color(0xFF0F4C81), borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(
+                  color: MovementLabColors.tealSoft,
+                  border: Border.all(color: MovementLabColors.trackTeal),
+                ),
                 padding: const EdgeInsets.all(8),
-                child: Icon(icon, color: Colors.white, size: 22),
+                child: Icon(icon, color: MovementLabColors.trackTeal, size: 22),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   title,
                   style: const TextStyle(
-                    color: Color(0xFF1A3A5C),
+                    color: MovementLabColors.ink,
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
                   ),
@@ -295,7 +387,7 @@ class _WorkoutTile extends StatelessWidget {
           Text(
             description,
             style: const TextStyle(
-              color: Color(0xFF526A86),
+              color: MovementLabColors.muted,
               fontSize: 15,
             ),
           ),
@@ -310,7 +402,12 @@ class _NavItem extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _NavItem({required this.icon, required this.label, required this.selected, required this.onTap});
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -319,9 +416,23 @@ class _NavItem extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: selected ? const Color(0xFF0F4C81) : Colors.grey.shade500),
+          Icon(
+            icon,
+            color: selected
+                ? MovementLabColors.graphite
+                : MovementLabColors.muted,
+          ),
           const SizedBox(height: 4),
-          Text(label, style: TextStyle(color: selected ? const Color(0xFF0F4C81) : Colors.grey.shade500, fontSize: 12)),
+          Text(
+            label,
+            style: TextStyle(
+              color: selected
+                  ? MovementLabColors.graphite
+                  : MovementLabColors.muted,
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );

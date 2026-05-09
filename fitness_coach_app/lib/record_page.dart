@@ -1,37 +1,54 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'movement_lab_theme.dart';
 import 'session_summary.dart';
 import 'user_profile.dart';
 
 // --- Config (edit these to change behaviour) ---
-const String _kAnthropicKey =
-    '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';
-const String _kElevenLabsKey =
-    'sk_906b72eb783432101589d45a07007c281af45967b331a44b';
-// Arnold voice ID (free tier). To change: pick another ID from backend/voice.py VOICES dict.
-const String _kElevenLabsVoiceId = 'VR6AewLTigWG4xSOukaG';
-const String _kServerUrl = 'http://localhost:5000'; // change to your Mac's IP when on a real device
+const String _kAnthropicKey = '';
+const String _kServerUrl =
+    'http://172.23.31.255:5000'; // change to your Mac's IP when on a real device
 const String _kProvider = 'claude';
 
 const List<List<int>> _poseConnections = [
-  [0, 1], [1, 2], [2, 3], [3, 7],
-  [0, 4], [4, 5], [5, 6], [6, 8],
-  [11, 12], [11, 23], [12, 24], [23, 24],
-  [11, 13], [13, 15], [15, 17], [15, 19], [15, 21],
-  [12, 14], [14, 16], [16, 18], [16, 20], [16, 22],
-  [23, 25], [25, 27], [27, 29], [27, 31],
-  [24, 26], [26, 28], [28, 30], [28, 32],
+  [0, 1],
+  [1, 2],
+  [2, 3],
+  [3, 7],
+  [0, 4],
+  [4, 5],
+  [5, 6],
+  [6, 8],
+  [11, 12],
+  [11, 23],
+  [12, 24],
+  [23, 24],
+  [11, 13],
+  [13, 15],
+  [15, 17],
+  [15, 19],
+  [15, 21],
+  [12, 14],
+  [14, 16],
+  [16, 18],
+  [16, 20],
+  [16, 22],
+  [23, 25],
+  [25, 27],
+  [27, 29],
+  [27, 31],
+  [24, 26],
+  [26, 28],
+  [28, 30],
+  [28, 32],
 ];
 
 class RecordPage extends StatefulWidget {
@@ -47,8 +64,6 @@ class _RecordPageState extends State<RecordPage> {
   List<CameraDescription> _cameras = [];
   CameraLensDirection _currentLensDirection = CameraLensDirection.back;
   String? _errorMessage;
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  bool _isSpeaking = false;
 
   bool _isProcessing = false;
   bool _frameInFlight = false;
@@ -71,18 +86,15 @@ class _RecordPageState extends State<RecordPage> {
   String _anthropicKey = _kAnthropicKey;
   String _openAiKey = '';
   String _backendStatus = 'Connecting to backend...';
-  String get _selectedExercise => AppProfile.exercises[AppProfile.instance.selectedExerciseIndex];
+  String get _selectedExercise =>
+      AppProfile.exercises[AppProfile.instance.selectedExerciseIndex];
 
   @override
   void initState() {
     super.initState();
-    AudioPlayer.global.setAudioContext(AudioContext(
-      iOS: AudioContextIOS(
-        category: AVAudioSessionCategory.playback,
-        options: {AVAudioSessionOptions.mixWithOthers},
-      ),
-    ));
-    _loadSavedServerUrl().then((_) => _initializeCamera()).then((_) => _autoConfigureBackend());
+    _loadSavedServerUrl()
+        .then((_) => _initializeCamera())
+        .then((_) => _autoConfigureBackend());
   }
 
   Future<void> _loadSavedServerUrl() async {
@@ -97,9 +109,14 @@ class _RecordPageState extends State<RecordPage> {
     CameraLensDirection direction = CameraLensDirection.back,
   }) async {
     try {
+      debugPrint('📷 _initializeCamera: requesting availableCameras()');
       _cameras = await availableCameras();
+      debugPrint('📷 availableCameras returned ${_cameras.length} entries');
       if (_cameras.isEmpty) {
-        setState(() => _errorMessage = 'No available cameras found.');
+        setState(
+          () => _errorMessage =
+              'No available cameras found. Check System Settings → Privacy & Security → Camera and grant permission to this app.',
+        );
         return;
       }
 
@@ -118,13 +135,26 @@ class _RecordPageState extends State<RecordPage> {
       );
 
       _initializeControllerFuture = _controller!.initialize();
-      await _initializeControllerFuture;
+      try {
+        await _initializeControllerFuture;
+      } catch (initErr, st) {
+        debugPrint('📷 CameraController.initialize failed: $initErr\n$st');
+        setState(
+          () => _errorMessage =
+              'Unable to initialize the camera. Check permissions and that no other app is using the camera. Error: $initErr',
+        );
+        return;
+      }
 
       if (mounted) {
         setState(() => _currentLensDirection = selected.lensDirection);
       }
-    } catch (e) {
-      setState(() => _errorMessage = e.toString());
+    } catch (e, st) {
+      debugPrint('📷 availableCameras() threw: $e\n$st');
+      setState(
+        () => _errorMessage =
+            'Camera initialization failed: $e. Check System Settings → Privacy & Security → Camera and grant access to this app.',
+      );
     }
   }
 
@@ -135,6 +165,26 @@ class _RecordPageState extends State<RecordPage> {
       openaiKey: null,
       exercise: _selectedExercise,
     );
+  }
+
+  Future<void> _speakFeedback(String text) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_serverUrl/speak'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'text': text}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        debugPrint('📷 Backend TTS succeeded');
+      } else {
+        debugPrint('📷 Backend TTS failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('📷 Backend TTS error: $e');
+    }
   }
 
   Future<void> _flipCamera() async {
@@ -162,6 +212,13 @@ class _RecordPageState extends State<RecordPage> {
 
   void _startProcessing() {
     if (_controller == null || !_controller!.value.isInitialized) return;
+    if (kIsWeb) {
+      setState(
+        () => _backendStatus =
+            'Live frame analysis needs the iOS or macOS camera runtime',
+      );
+      return;
+    }
     setState(() => _isProcessing = true);
     _controller!.startImageStream(_handleFrame);
   }
@@ -171,7 +228,8 @@ class _RecordPageState extends State<RecordPage> {
     final correct = (_stats['correct_count'] as num? ?? 0).toInt();
     final incorrect = (_stats['incorrect_count'] as num? ?? 0).toInt();
     if (correct == 0 && incorrect == 0) return;
-    final existing = _sessionExerciseStats[_selectedExercise] ??
+    final existing =
+        _sessionExerciseStats[_selectedExercise] ??
         {'correct': 0, 'incorrect': 0};
     _sessionExerciseStats[_selectedExercise] = {
       'correct': existing['correct']! + correct,
@@ -192,7 +250,9 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   void _stopProcessing() {
-    _controller?.stopImageStream();
+    if (!kIsWeb) {
+      _controller?.stopImageStream();
+    }
     setState(() {
       _isProcessing = false;
       _frameInFlight = false;
@@ -220,7 +280,12 @@ class _RecordPageState extends State<RecordPage> {
     // starts at the wrong offset and corrupts colors. This guarantees offset 0.
     final clean = Uint8List(width * height * 4);
     for (var y = 0; y < height; y++) {
-      clean.setRange(y * width * 4, (y + 1) * width * 4, plane.bytes, y * stride);
+      clean.setRange(
+        y * width * 4,
+        (y + 1) * width * 4,
+        plane.bytes,
+        y * stride,
+      );
     }
 
     var image = img.Image.fromBytes(
@@ -247,10 +312,12 @@ class _RecordPageState extends State<RecordPage> {
   void _handleFrame(CameraImage cameraImage) {
     if (!_didLogFormat) {
       _didLogFormat = true;
-      debugPrint('📷 format=${cameraImage.format.group} '
-          'size=${cameraImage.width}x${cameraImage.height} '
-          'stride=${cameraImage.planes[0].bytesPerRow} '
-          'planes=${cameraImage.planes.length}');
+      debugPrint(
+        '📷 format=${cameraImage.format.group} '
+        'size=${cameraImage.width}x${cameraImage.height} '
+        'stride=${cameraImage.planes[0].bytesPerRow} '
+        'planes=${cameraImage.planes.length}',
+      );
     }
     if (_frameInFlight || !_isProcessing || !mounted) return;
     _frameInFlight = true;
@@ -268,7 +335,10 @@ class _RecordPageState extends State<RecordPage> {
       final response = await http
           .post(
             Uri.parse('$_serverUrl/process_frame'),
-            headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+            headers: {
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true',
+            },
             body: jsonEncode({'image': base64Encode(jpegBytes)}),
           )
           .timeout(const Duration(seconds: 5));
@@ -280,6 +350,7 @@ class _RecordPageState extends State<RecordPage> {
         final annotatedBytes = base64Decode(data['annotated_image'] as String);
         final newStats = data['stats'] as Map<String, dynamic>;
         final landmarksJson = (data['landmarks'] as List<dynamic>?) ?? [];
+        final aiFeedback = (data['ai_feedback'] as String?) ?? '';
 
         final landmarks = landmarksJson.map<Offset>((raw) {
           final lm = raw as Map<String, dynamic>;
@@ -297,46 +368,17 @@ class _RecordPageState extends State<RecordPage> {
           });
         }
 
-        final aiFeedback = data['ai_feedback'] as String? ?? '';
+        // If there's AI feedback, speak it via the backend TTS endpoint
         if (aiFeedback.isNotEmpty) {
+          final preview = aiFeedback.length > 50
+              ? '${aiFeedback.substring(0, 50)}...'
+              : aiFeedback;
+          debugPrint('📷 AI Feedback received: $preview');
           _speakFeedback(aiFeedback);
         }
       }
     } catch (_) {
       // Network errors; keep the stream going.
-    }
-  }
-
-  Future<void> _speakFeedback(String text) async {
-    if (text.isEmpty || _isSpeaking) return;
-    _isSpeaking = true;
-    try {
-      final response = await http
-          .post(
-            Uri.parse(
-                'https://api.elevenlabs.io/v1/text-to-speech/$_kElevenLabsVoiceId'),
-            headers: {
-              'xi-api-key': _kElevenLabsKey,
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'text': text,
-              'model_id': 'eleven_turbo_v2_5',
-            }),
-          )
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final dir = await getTemporaryDirectory();
-        final file = File('${dir.path}/tts_feedback.mp3');
-        await file.writeAsBytes(response.bodyBytes);
-        await _audioPlayer.play(DeviceFileSource(file.path));
-      } else {
-        debugPrint('[TTS] ElevenLabs ${response.statusCode}: ${response.body}');
-      }
-    } catch (e) {
-      debugPrint('[TTS] Error: $e');
-    } finally {
-      _isSpeaking = false;
     }
   }
 
@@ -350,7 +392,10 @@ class _RecordPageState extends State<RecordPage> {
       final response = await http
           .post(
             Uri.parse('$_serverUrl/configure'),
-            headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+            headers: {
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true',
+            },
             body: jsonEncode({
               'provider': provider,
               'anthropic_key': anthropicKey,
@@ -366,7 +411,7 @@ class _RecordPageState extends State<RecordPage> {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         setState(() {
           _backendStatus = data['provider'] != null
-              ? 'AI: ${data['provider']} + ElevenLabs (phone)'
+              ? 'AI: ${data['provider']} + backend voice'
               : 'Backend connected (no AI provider)';
         });
       } else {
@@ -395,10 +440,8 @@ class _RecordPageState extends State<RecordPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF11253C),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: MovementLabColors.porcelain,
+      shape: const RoundedRectangleBorder(),
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(
           left: 20,
@@ -414,14 +457,15 @@ class _RecordPageState extends State<RecordPage> {
               const Text(
                 'Backend configuration',
                 style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700),
+                  color: MovementLabColors.ink,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
               const SizedBox(height: 6),
               const Text(
                 'On a real phone use your Mac\'s local IP (e.g. http://192.168.1.x:8080)',
-                style: TextStyle(color: Colors.white54, fontSize: 12),
+                style: TextStyle(color: MovementLabColors.muted, fontSize: 12),
               ),
               const SizedBox(height: 14),
               _configField(serverCtrl, 'Server URL', 'http://192.168.1.x:8080'),
@@ -440,8 +484,9 @@ class _RecordPageState extends State<RecordPage> {
                     _anthropicKey = anthropicCtrl.text.trim();
                     _openAiKey = openAiCtrl.text.trim();
                   });
-                  SharedPreferences.getInstance()
-                      .then((p) => p.setString('server_url', url));
+                  SharedPreferences.getInstance().then(
+                    (p) => p.setString('server_url', url),
+                  );
                   _configureBackend(
                     provider: _provider.isEmpty ? null : _provider,
                     anthropicKey: _anthropicKey.isEmpty ? null : _anthropicKey,
@@ -450,10 +495,9 @@ class _RecordPageState extends State<RecordPage> {
                   Navigator.of(ctx).pop();
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.cyanAccent,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18)),
+                  backgroundColor: MovementLabColors.graphite,
+                  foregroundColor: MovementLabColors.white,
+                  shape: const RoundedRectangleBorder(),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   minimumSize: const Size(double.infinity, 0),
                 ),
@@ -466,18 +510,17 @@ class _RecordPageState extends State<RecordPage> {
     );
   }
 
-  Widget _configField(
-      TextEditingController ctrl, String label, String hint) {
+  Widget _configField(TextEditingController ctrl, String label, String hint) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
         controller: ctrl,
-        style: const TextStyle(color: Colors.white),
+        style: const TextStyle(color: MovementLabColors.ink),
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          labelStyle: const TextStyle(color: Colors.white70),
-          hintStyle: const TextStyle(color: Colors.white30),
+          labelStyle: const TextStyle(color: MovementLabColors.muted),
+          hintStyle: const TextStyle(color: MovementLabColors.muted),
           border: const OutlineInputBorder(),
         ),
       ),
@@ -488,7 +531,6 @@ class _RecordPageState extends State<RecordPage> {
   void dispose() {
     if (_isProcessing) _controller?.stopImageStream();
     _controller?.dispose();
-    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -498,15 +540,12 @@ class _RecordPageState extends State<RecordPage> {
     final isSmall = screenSize.width < 400;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0E1E31),
+      backgroundColor: MovementLabColors.porcelain,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: const Text('Record', style: TextStyle(color: Colors.white)),
+        title: const Text('Movement capture'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white),
+            icon: const Icon(Icons.tune),
             onPressed: _showBackendConfig,
             tooltip: 'Backend settings',
           ),
@@ -542,7 +581,9 @@ class _RecordPageState extends State<RecordPage> {
                           });
                           _configureBackend(
                             provider: _provider,
-                            anthropicKey: _anthropicKey.isEmpty ? null : _anthropicKey,
+                            anthropicKey: _anthropicKey.isEmpty
+                                ? null
+                                : _anthropicKey,
                             openaiKey: _openAiKey.isEmpty ? null : _openAiKey,
                             exercise: AppProfile.exercises[i],
                           );
@@ -555,22 +596,25 @@ class _RecordPageState extends State<RecordPage> {
                           ),
                           decoration: BoxDecoration(
                             color: selected
-                                ? Colors.cyanAccent.withValues(alpha: 0.15)
-                                : Colors.white10,
-                            borderRadius: BorderRadius.circular(24),
+                                ? MovementLabColors.tealSoft
+                                : MovementLabColors.white,
                             border: Border.all(
                               color: selected
-                                  ? Colors.cyanAccent
-                                  : Colors.white24,
+                                  ? MovementLabColors.trackTeal
+                                  : MovementLabColors.lineStrong,
                               width: selected ? 1.5 : 1,
                             ),
                           ),
                           child: Text(
                             exercise,
                             style: TextStyle(
-                              color: selected ? Colors.cyanAccent : Colors.white70,
+                              color: selected
+                                  ? MovementLabColors.trackTeal
+                                  : MovementLabColors.muted,
                               fontSize: isSmall ? 13 : 14,
-                              fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+                              fontWeight: selected
+                                  ? FontWeight.w900
+                                  : FontWeight.w700,
                             ),
                           ),
                         ),
@@ -588,8 +632,8 @@ class _RecordPageState extends State<RecordPage> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: _backendStatus.startsWith('AI:')
-                          ? Colors.greenAccent
-                          : Colors.orangeAccent,
+                          ? MovementLabColors.correct
+                          : MovementLabColors.tempo,
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -597,8 +641,9 @@ class _RecordPageState extends State<RecordPage> {
                     child: Text(
                       _backendStatus,
                       style: TextStyle(
-                          color: Colors.white60,
-                          fontSize: isSmall ? 11 : 13),
+                        color: MovementLabColors.muted,
+                        fontSize: isSmall ? 11 : 13,
+                      ),
                     ),
                   ),
                 ],
@@ -607,23 +652,20 @@ class _RecordPageState extends State<RecordPage> {
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(32),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xFF1C3350), Color(0xFF0F2340)],
+                    color: MovementLabColors.paper,
+                    border: Border.all(
+                      color: MovementLabColors.graphite,
+                      width: 2,
                     ),
-                    border: Border.all(color: Colors.white24, width: 1.5),
                     boxShadow: const [
                       BoxShadow(
-                        color: Color.fromRGBO(0, 0, 0, 0.35),
-                        blurRadius: 28,
-                        offset: Offset(0, 14),
+                        color: Color(0x26252420),
+                        blurRadius: 24,
+                        offset: Offset(0, 12),
                       ),
                     ],
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(32),
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -632,19 +674,19 @@ class _RecordPageState extends State<RecordPage> {
                           Positioned.fill(
                             child: CustomPaint(
                               painter: _PosePainter(
-                                  poseLandmarks: _poseLandmarks),
+                                poseLandmarks: _poseLandmarks,
+                              ),
                             ),
                           ),
                         Positioned(
                           left: isSmall ? 12 : 20,
                           top: isSmall ? 12 : 20,
                           child: _Badge(
-                            icon: Icons.camera,
+                            icon: Icons.sensors,
                             label: _isProcessing ? 'Analyzing' : 'Live Feed',
                             color: _isProcessing
-                                ? Colors.cyanAccent
-                                    .withValues(alpha: 0.2)
-                                : Colors.white24,
+                                ? MovementLabColors.tealSoft
+                                : MovementLabColors.white,
                           ),
                         ),
                         Positioned(
@@ -657,16 +699,22 @@ class _RecordPageState extends State<RecordPage> {
                             ),
                             decoration: BoxDecoration(
                               color: (_stats['is_in_rep'] as bool? ?? false)
-                                  ? const Color.fromRGBO(0, 200, 100, 0.8)
-                                  : Colors.white24,
-                              borderRadius: BorderRadius.circular(18),
+                                  ? MovementLabColors.correctSoft
+                                  : MovementLabColors.white,
+                              border: Border.all(
+                                color: (_stats['is_in_rep'] as bool? ?? false)
+                                    ? MovementLabColors.correct
+                                    : MovementLabColors.lineStrong,
+                              ),
                             ),
                             child: Text(
                               (_stats['is_in_rep'] as bool? ?? false)
                                   ? 'In Rep'
                                   : 'Ready',
                               style: TextStyle(
-                                color: Colors.white,
+                                color: (_stats['is_in_rep'] as bool? ?? false)
+                                    ? MovementLabColors.correct
+                                    : MovementLabColors.graphite,
                                 fontWeight: FontWeight.w600,
                                 fontSize: isSmall ? 12 : 14,
                               ),
@@ -679,11 +727,17 @@ class _RecordPageState extends State<RecordPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _repCountText('✓ ${_stats['correct_count']}',
-                                  Colors.greenAccent, isSmall),
+                              _repCountText(
+                                '✓ ${_stats['correct_count']}',
+                                MovementLabColors.correct,
+                                isSmall,
+                              ),
                               const SizedBox(height: 4),
-                              _repCountText('✗ ${_stats['incorrect_count']}',
-                                  Colors.redAccent, isSmall),
+                              _repCountText(
+                                '✗ ${_stats['incorrect_count']}',
+                                MovementLabColors.correction,
+                                isSmall,
+                              ),
                             ],
                           ),
                         ),
@@ -698,12 +752,18 @@ class _RecordPageState extends State<RecordPage> {
                                 child: Container(
                                   padding: const EdgeInsets.all(10),
                                   decoration: const BoxDecoration(
-                                    color: Colors.white24,
-                                    shape: BoxShape.circle,
+                                    color: MovementLabColors.white,
+                                    border: Border.fromBorderSide(
+                                      BorderSide(
+                                        color: MovementLabColors.graphite,
+                                      ),
+                                    ),
                                   ),
-                                  child: Icon(Icons.flip_camera_ios,
-                                      color: Colors.white,
-                                      size: isSmall ? 20 : 24),
+                                  child: Icon(
+                                    Icons.flip_camera_ios,
+                                    color: MovementLabColors.graphite,
+                                    size: isSmall ? 20 : 24,
+                                  ),
                                 ),
                               ),
                               if ((_stats['current_feedback'] as String?)
@@ -711,22 +771,26 @@ class _RecordPageState extends State<RecordPage> {
                                   true) ...[
                                 const SizedBox(height: 8),
                                 Container(
-                                  constraints:
-                                      const BoxConstraints(maxWidth: 180),
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 180,
+                                  ),
                                   padding: EdgeInsets.symmetric(
                                     horizontal: isSmall ? 10 : 14,
                                     vertical: isSmall ? 8 : 10,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.black54,
-                                    borderRadius: BorderRadius.circular(14),
+                                    color: MovementLabColors.correctionSoft,
+                                    border: Border.all(
+                                      color: MovementLabColors.correction,
+                                    ),
                                   ),
                                   child: Text(
                                     _stats['current_feedback'] as String,
                                     textAlign: TextAlign.right,
                                     style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: isSmall ? 11 : 13),
+                                      color: MovementLabColors.graphite,
+                                      fontSize: isSmall ? 11 : 13,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -743,13 +807,14 @@ class _RecordPageState extends State<RecordPage> {
               Row(
                 children: [
                   ..._buildAngleChips(),
-                  if ((_stats['current_feedback'] as String?)?.isNotEmpty == true) ...[
+                  if ((_stats['current_feedback'] as String?)?.isNotEmpty ==
+                      true) ...[
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _stats['current_feedback'] as String,
                         style: TextStyle(
-                          color: Colors.cyanAccent,
+                          color: MovementLabColors.trackTeal,
                           fontSize: isSmall ? 12 : 13,
                           fontWeight: FontWeight.w500,
                         ),
@@ -765,31 +830,31 @@ class _RecordPageState extends State<RecordPage> {
                   ElevatedButton(
                     onPressed: _finishSession,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor:Color.fromARGB(255, 137, 9, 9),
-                      foregroundColor: Colors.white,
+                      backgroundColor: MovementLabColors.correction,
+                      foregroundColor: MovementLabColors.white,
                       padding: EdgeInsets.symmetric(
                         horizontal: isSmall ? 20 : 28,
                         vertical: isSmall ? 12 : 14,
                       ),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24)),
+                      shape: const RoundedRectangleBorder(),
                     ),
-                    child: Text('Finish Session')
+                    child: Text('Finish Session'),
                   ),
                   const Spacer(),
                   ElevatedButton(
-                    onPressed:
-                        _isProcessing ? _stopProcessing : _startProcessing,
+                    onPressed: _isProcessing
+                        ? _stopProcessing
+                        : _startProcessing,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          _isProcessing ? Colors.redAccent : Colors.green,
-                      foregroundColor: Colors.white,
+                      backgroundColor: _isProcessing
+                          ? MovementLabColors.correction
+                          : MovementLabColors.correct,
+                      foregroundColor: MovementLabColors.white,
                       padding: EdgeInsets.symmetric(
                         horizontal: isSmall ? 20 : 28,
                         vertical: isSmall ? 12 : 14,
                       ),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24)),
+                      shape: const RoundedRectangleBorder(),
                     ),
                     child: Text(
                       _isProcessing ? 'Stop' : 'Start',
@@ -822,7 +887,11 @@ class _RecordPageState extends State<RecordPage> {
         gap,
         _StatChip(label: 'Body', value: _angleDisplay('body_angle')),
         gap,
-        _StatChip(label: 'State', value: state.isEmpty ? 'up' : state, highlight: isInRep),
+        _StatChip(
+          label: 'State',
+          value: state.isEmpty ? 'up' : state,
+          highlight: isInRep,
+        ),
       ];
     }
 
@@ -832,7 +901,11 @@ class _RecordPageState extends State<RecordPage> {
       gap,
       _StatChip(label: 'Hip', value: _angleDisplay('hip_angle')),
       gap,
-      _StatChip(label: 'State', value: state.isEmpty ? 'standing' : state, highlight: isInRep),
+      _StatChip(
+        label: 'State',
+        value: state.isEmpty ? 'standing' : state,
+        highlight: isInRep,
+      ),
     ];
   }
 
@@ -864,14 +937,16 @@ class _RecordPageState extends State<RecordPage> {
             return _buildErrorState();
           }
           return const Center(
-            child: CircularProgressIndicator(color: Color(0xFF8BB8F5)),
+            child: CircularProgressIndicator(
+              color: MovementLabColors.trackTeal,
+            ),
           );
         },
       );
     }
 
     return const Center(
-      child: CircularProgressIndicator(color: Color(0xFF8BB8F5)),
+      child: CircularProgressIndicator(color: MovementLabColors.trackTeal),
     );
   }
 
@@ -882,12 +957,19 @@ class _RecordPageState extends State<RecordPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+            const Icon(
+              Icons.error_outline,
+              color: MovementLabColors.correction,
+              size: 48,
+            ),
             const SizedBox(height: 16),
             Text(
               _errorMessage ?? 'Unable to access the camera.',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70, fontSize: 16),
+              style: const TextStyle(
+                color: MovementLabColors.graphite,
+                fontSize: 16,
+              ),
             ),
           ],
         ),
@@ -898,15 +980,20 @@ class _RecordPageState extends State<RecordPage> {
   Widget _repCountText(String text, Color color, bool isSmall) {
     return Container(
       padding: EdgeInsets.symmetric(
-          horizontal: isSmall ? 8 : 12, vertical: isSmall ? 4 : 6),
+        horizontal: isSmall ? 8 : 12,
+        vertical: isSmall ? 4 : 6,
+      ),
       decoration: BoxDecoration(
-          color: Colors.black45, borderRadius: BorderRadius.circular(10)),
+        color: MovementLabColors.white,
+        border: Border.all(color: color),
+      ),
       child: Text(
         text,
         style: TextStyle(
-            color: color,
-            fontSize: isSmall ? 14 : 16,
-            fontWeight: FontWeight.w700),
+          color: color,
+          fontSize: isSmall ? 14 : 16,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -919,17 +1006,22 @@ class _StatChip extends StatelessWidget {
   final String value;
   final bool highlight;
 
-  const _StatChip({required this.label, required this.value, this.highlight = false});
+  const _StatChip({
+    required this.label,
+    required this.value,
+    this.highlight = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: highlight ? Colors.cyanAccent.withValues(alpha: 0.15) : Colors.white10,
-        borderRadius: BorderRadius.circular(12),
+        color: highlight ? MovementLabColors.tealSoft : MovementLabColors.white,
         border: Border.all(
-          color: highlight ? Colors.cyanAccent.withValues(alpha: 0.6) : Colors.white24,
+          color: highlight
+              ? MovementLabColors.trackTeal
+              : MovementLabColors.lineStrong,
         ),
       ),
       child: RichText(
@@ -937,12 +1029,17 @@ class _StatChip extends StatelessWidget {
           children: [
             TextSpan(
               text: '$label  ',
-              style: const TextStyle(color: Colors.white54, fontSize: 11),
+              style: const TextStyle(
+                color: MovementLabColors.muted,
+                fontSize: 11,
+              ),
             ),
             TextSpan(
               text: value,
               style: TextStyle(
-                color: highlight ? Colors.cyanAccent : Colors.white,
+                color: highlight
+                    ? MovementLabColors.trackTeal
+                    : MovementLabColors.graphite,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
@@ -959,31 +1056,34 @@ class _Badge extends StatelessWidget {
   final String label;
   final Color color;
 
-  const _Badge(
-      {required this.icon, required this.label, required this.color});
+  const _Badge({required this.icon, required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-          color: color, borderRadius: BorderRadius.circular(18)),
+        color: color,
+        border: Border.all(color: MovementLabColors.graphite),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white, size: 16),
+          Icon(icon, color: MovementLabColors.graphite, size: 16),
           const SizedBox(width: 6),
-          Text(label,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13)),
+          Text(
+            label,
+            style: const TextStyle(
+              color: MovementLabColors.graphite,
+              fontWeight: FontWeight.w900,
+              fontSize: 13,
+            ),
+          ),
         ],
       ),
     );
   }
 }
-
 
 class _PosePainter extends CustomPainter {
   final List<Offset> poseLandmarks;
@@ -993,13 +1093,13 @@ class _PosePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final linePaint = Paint()
-      ..color = Colors.cyanAccent.withValues(alpha: 0.85)
+      ..color = MovementLabColors.trackTeal.withValues(alpha: 0.88)
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
     final dotPaint = Paint()
-      ..color = Colors.pinkAccent.withValues(alpha: 0.95)
+      ..color = MovementLabColors.correction.withValues(alpha: 0.95)
       ..style = PaintingStyle.fill;
 
     for (final conn in _poseConnections) {
@@ -1007,10 +1107,14 @@ class _PosePainter extends CustomPainter {
       final ei = conn[1];
       if (si < poseLandmarks.length && ei < poseLandmarks.length) {
         canvas.drawLine(
-          Offset(poseLandmarks[si].dx * size.width,
-              poseLandmarks[si].dy * size.height),
-          Offset(poseLandmarks[ei].dx * size.width,
-              poseLandmarks[ei].dy * size.height),
+          Offset(
+            poseLandmarks[si].dx * size.width,
+            poseLandmarks[si].dy * size.height,
+          ),
+          Offset(
+            poseLandmarks[ei].dx * size.width,
+            poseLandmarks[ei].dy * size.height,
+          ),
           linePaint,
         );
       }
@@ -1018,7 +1122,10 @@ class _PosePainter extends CustomPainter {
 
     for (final lm in poseLandmarks) {
       canvas.drawCircle(
-          Offset(lm.dx * size.width, lm.dy * size.height), 5, dotPaint);
+        Offset(lm.dx * size.width, lm.dy * size.height),
+        5,
+        dotPaint,
+      );
     }
   }
 

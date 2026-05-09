@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'movement_lab_theme.dart';
 import 'user_profile.dart';
 
 class SessionSummaryPage extends StatefulWidget {
@@ -16,22 +17,24 @@ class SessionSummaryPage extends StatefulWidget {
 }
 
 class _SessionSummaryPageState extends State<SessionSummaryPage> {
-  int get _totalCorrect => widget.exerciseStats.values
-      .fold(0, (s, m) => s + (m['correct'] ?? 0));
-  int get _totalIncorrect => widget.exerciseStats.values
-      .fold(0, (s, m) => s + (m['incorrect'] ?? 0));
+  int get _totalCorrect =>
+      widget.exerciseStats.values.fold(0, (s, m) => s + (m['correct'] ?? 0));
+  int get _totalIncorrect =>
+      widget.exerciseStats.values.fold(0, (s, m) => s + (m['incorrect'] ?? 0));
   int get _total => _totalCorrect + _totalIncorrect;
   double get _accuracy => _total > 0 ? _totalCorrect / _total : 0.0;
 
   Color get _accuracyColor {
-    if (_accuracy >= 0.8) return const Color(0xFF43A047);
-    if (_accuracy >= 0.5) return const Color(0xFFFFC107);
-    return const Color(0xFFE53935);
+    if (_accuracy >= 0.8) return MovementLabColors.correct;
+    if (_accuracy >= 0.5) return MovementLabColors.tempo;
+    return MovementLabColors.correction;
   }
 
   Future<void> _saveSession() async {
     final profile = AppProfile.instance;
-    debugPrint('[Session] userId=${profile.auth0UserId}, total=$_total, isGuest=${profile.isGuest}');
+    debugPrint(
+      '[Session] userId=${profile.auth0UserId}, total=$_total, isGuest=${profile.isGuest}',
+    );
     if ((profile.auth0UserId ?? '').isEmpty || _total == 0) {
       debugPrint('[Session] Save skipped — no userId or zero reps');
       return;
@@ -55,11 +58,11 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
           .doc(profile.auth0UserId)
           .collection('sessions')
           .add({
-        'lifts': lifts,
-        'totalReps': _total,
-        'accuracy': _accuracy,
-        'completedAt': FieldValue.serverTimestamp(),
-      });
+            'lifts': lifts,
+            'totalReps': _total,
+            'accuracy': _accuracy,
+            'completedAt': FieldValue.serverTimestamp(),
+          });
       debugPrint('[Session] Saved at sessions/${ref.id}');
     } catch (e) {
       debugPrint('[Session] Failed to save: $e');
@@ -74,17 +77,15 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0E1E31),
+      backgroundColor: MovementLabColors.porcelain,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
+          icon: const Icon(Icons.close),
           onPressed: _saveAndPop,
         ),
         title: const Text(
           'Session Summary',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          style: TextStyle(fontWeight: FontWeight.w900),
         ),
       ),
       body: SafeArea(
@@ -94,6 +95,8 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(height: 16),
+              const LabLabel('Movement report'),
+              const SizedBox(height: 14),
 
               // ── Accuracy arc ───────────────────────────────────────────
               SizedBox(
@@ -118,7 +121,11 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
                         ),
                         const Text(
                           'Accuracy',
-                          style: TextStyle(color: Colors.white54, fontSize: 13),
+                          style: TextStyle(
+                            color: MovementLabColors.muted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ],
                     ),
@@ -136,7 +143,7 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
                       label: 'Total Reps',
                       value: '$_total',
                       icon: Icons.repeat,
-                      color: Colors.white70,
+                      color: MovementLabColors.graphite,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -145,7 +152,7 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
                       label: 'Correct',
                       value: '$_totalCorrect',
                       icon: Icons.check_circle_outline,
-                      color: const Color(0xFF43A047),
+                      color: MovementLabColors.correct,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -154,7 +161,7 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
                       label: 'Incorrect',
                       value: '$_totalIncorrect',
                       icon: Icons.cancel_outlined,
-                      color: const Color(0xFFE53935),
+                      color: MovementLabColors.correction,
                     ),
                   ),
                 ],
@@ -168,9 +175,9 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
                   child: Text(
                     'By Exercise',
                     style: TextStyle(
-                      color: Colors.white70,
+                      color: MovementLabColors.muted,
                       fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w900,
                       letterSpacing: 0.5,
                     ),
                   ),
@@ -193,11 +200,10 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
                 child: ElevatedButton(
                   onPressed: _saveAndPop,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F4C81),
-                    foregroundColor: Colors.white,
+                    backgroundColor: MovementLabColors.graphite,
+                    foregroundColor: MovementLabColors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20)),
+                    shape: const RoundedRectangleBorder(),
                     elevation: 0,
                   ),
                   child: const Text(
@@ -235,54 +241,62 @@ class _ExerciseRow extends StatelessWidget {
     final accuracy = total > 0 ? correct / total : 0.0;
     Color accuracyColor;
     if (accuracy >= 0.8) {
-      accuracyColor = const Color(0xFF43A047);
+      accuracyColor = MovementLabColors.correct;
     } else if (accuracy >= 0.5) {
-      accuracyColor = const Color(0xFFFFC107);
+      accuracyColor = MovementLabColors.tempo;
     } else {
-      accuracyColor = const Color(0xFFE53935);
+      accuracyColor = MovementLabColors.correction;
     }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF162033),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white12),
+        color: MovementLabColors.white,
+        border: Border.all(color: MovementLabColors.line),
       ),
       child: Row(
         children: [
-          const Icon(Icons.fitness_center, color: Color(0xFF1E88E5), size: 18),
+          const Icon(
+            Icons.fitness_center,
+            color: MovementLabColors.trackTeal,
+            size: 18,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               exercise,
               style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
+                color: MovementLabColors.graphite,
+                fontWeight: FontWeight.w800,
                 fontSize: 14,
               ),
             ),
           ),
           Text(
             '$total reps',
-            style: const TextStyle(color: Colors.white54, fontSize: 13),
+            style: const TextStyle(
+              color: MovementLabColors.muted,
+              fontSize: 13,
+            ),
           ),
           const SizedBox(width: 12),
           Text(
             '✓ $correct',
             style: const TextStyle(
-                color: Color(0xFF43A047),
-                fontWeight: FontWeight.w700,
-                fontSize: 13),
+              color: MovementLabColors.correct,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
           ),
           const SizedBox(width: 8),
           Text(
             '✗ $incorrect',
             style: const TextStyle(
-                color: Color(0xFFE53935),
-                fontWeight: FontWeight.w700,
-                fontSize: 13),
+              color: MovementLabColors.correction,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
           ),
           const SizedBox(width: 12),
           Text(
@@ -319,8 +333,7 @@ class _StatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF162033),
-        borderRadius: BorderRadius.circular(18),
+        color: MovementLabColors.white,
         border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Column(
@@ -330,12 +343,18 @@ class _StatCard extends StatelessWidget {
           Text(
             value,
             style: TextStyle(
-                color: color, fontSize: 26, fontWeight: FontWeight.w800),
+              color: color,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             label,
-            style: const TextStyle(color: Colors.white54, fontSize: 11),
+            style: const TextStyle(
+              color: MovementLabColors.muted,
+              fontSize: 11,
+            ),
             textAlign: TextAlign.center,
           ),
         ],
@@ -362,7 +381,7 @@ class _SummaryArcPainter extends CustomPainter {
       Offset(cx, cy),
       radius,
       Paint()
-        ..color = Colors.white10
+        ..color = MovementLabColors.line
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeW,
     );

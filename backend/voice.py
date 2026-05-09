@@ -1,9 +1,9 @@
 """
-Voice module - TTS using ElevenLabs (paid) or macOS say (free).
-To change voice: update the default voice_id in main.py — any ElevenLabs voice name works.
+Voice module - backend TTS using ElevenLabs or macOS say fallback.
 """
 import os
 import subprocess
+import threading
 
 MACOS_VOICES = ["samantha", "alex", "victoria", "karen", "daniel"]
 
@@ -31,6 +31,7 @@ class VoiceCoach:
     ):
         self.use_elevenlabs = use_elevenlabs
         self.voice_id = voice_id
+        self._speech_lock = threading.Lock()
 
         if use_elevenlabs:
             self.api_key = api_key or os.environ.get("ELEVENLABS_API_KEY")
@@ -40,6 +41,8 @@ class VoiceCoach:
             self.client = ElevenLabs(api_key=self.api_key)
             self.voice_id = self._resolve_voice_id(voice_id)
         else:
+            if self.voice_id.lower() not in MACOS_VOICES:
+                self.voice_id = "samantha"
             self.client = None
 
     def _resolve_voice_id(self, name: str) -> str:
@@ -54,10 +57,17 @@ class VoiceCoach:
         return name
 
     def speak(self, text: str) -> None:
-        if self.use_elevenlabs:
-            self._speak_elevenlabs(text)
-        else:
-            self._speak_macos(text)
+        if not self._speech_lock.acquire(blocking=False):
+            print("[Voice] Speech already in progress; skipping overlapping request.")
+            return
+
+        try:
+            if self.use_elevenlabs:
+                self._speak_elevenlabs(text)
+            else:
+                self._speak_macos(text)
+        finally:
+            self._speech_lock.release()
 
     def _speak_elevenlabs(self, text: str) -> None:
         try:

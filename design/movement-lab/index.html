@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lift & Flow - Movement Lab Visual Prototype</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="lab-board" aria-label="Lift and Flow Movement Lab design preview">
+      <section class="hero-section">
+        <div class="identity-lockup">
+          <div class="lab-mark" aria-hidden="true">
+            <span></span>
+            <i></i>
+          </div>
+          <div>
+            <p class="system-label">Visual identity prototype</p>
+            <h1>Lift & Flow</h1>
+            <p class="thesis">
+              A biomechanical coaching interface that feels measured, precise,
+              and human. No generic neon gym dashboard, no gradient dark mode.
+            </p>
+          </div>
+        </div>
+
+        <div class="theme-card">
+          <span class="card-index">01</span>
+          <h2>Movement Lab</h2>
+          <p>
+            The app should feel like a real-time form instrument: body motion,
+            joint angles, rep quality, and coach cues are the visual language.
+          </p>
+        </div>
+      </section>
+
+      <section class="identity-grid" aria-label="Visual identity system">
+        <article class="principle">
+          <span class="card-index">02</span>
+          <h2>Design Rules</h2>
+          <ul>
+            <li>Light instrument surfaces instead of dark glass panels.</li>
+            <li>Calibration ticks, angle arcs, and rep timelines as motifs.</li>
+            <li>Color is semantic: teal tracks, green confirms, clay corrects.</li>
+            <li>Coach copy stays short enough to read while moving.</li>
+          </ul>
+        </article>
+
+        <article class="palette">
+          <span class="card-index">03</span>
+          <h2>Palette</h2>
+          <div class="swatches">
+            <div style="--swatch: #f6f7f1"><b>Porcelain</b><small>#F6F7F1</small></div>
+            <div style="--swatch: #dfe5df"><b>Paper Line</b><small>#DFE5DF</small></div>
+            <div style="--swatch: #252420"><b>Graphite</b><small>#252420</small></div>
+            <div style="--swatch: #006f73"><b>Track Teal</b><small>#006F73</small></div>
+            <div style="--swatch: #4e7f43"><b>Correct</b><small>#4E7F43</small></div>
+            <div style="--swatch: #b64e3c"><b>Correction</b><small>#B64E3C</small></div>
+            <div style="--swatch: #c89b2c"><b>Tempo</b><small>#C89B2C</small></div>
+            <div style="--swatch: #ffffff"><b>White Ink</b><small>#FFFFFF</small></div>
+          </div>
+        </article>
+
+        <article class="type-panel">
+          <span class="card-index">04</span>
+          <h2>Type Behavior</h2>
+          <div class="type-sample">
+            <strong>Hold depth.</strong>
+            <span>Knee angle stabilized at 84 deg</span>
+            <code>REP_12 / DESCENT 1.4S / FORM PASS</code>
+          </div>
+        </article>
+      </section>
+
+      <section class="screens-section" aria-label="Mobile screen concepts">
+        <div class="section-heading">
+          <span class="card-index">05</span>
+          <h2>Core Mobile Screens</h2>
+          <p>
+            The UI is built around three moments: choose a session, analyze live
+            movement, and leave with a practical next-focus cue.
+          </p>
+        </div>
+
+        <div class="phone-row">
+          <article class="phone home-screen" aria-label="Home readiness screen">
+            <div class="phone-chrome"></div>
+            <header class="phone-header">
+              <p>Today</p>
+              <button aria-label="Profile">AR</button>
+            </header>
+            <h3>Movement readiness</h3>
+            <div class="readiness-meter">
+              <span>86</span>
+              <small>ready score</small>
+            </div>
+            <div class="micro-ruler" aria-hidden="true"></div>
+            <section class="plan-list">
+              <h4>Planned work</h4>
+              <div class="plan-row active">
+                <b>Squat analysis</b>
+                <span>4 x 6 / depth focus</span>
+              </div>
+              <div class="plan-row">
+                <b>Push-up line</b>
+                <span>3 x 12 / body angle</span>
+              </div>
+              <div class="plan-row">
+                <b>Hip mobility</b>
+                <span>5 min / prep</span>
+              </div>
+            </section>
+            <nav class="tabbar" aria-label="App tabs">
+              <span class="selected">Home</span><span>Train</span><span>Stats</span><span>Me</span>
+            </nav>
+          </article>
+
+          <article class="phone live-screen" aria-label="Live coaching screen">
+            <div class="phone-chrome"></div>
+            <header class="phone-header">
+              <p>Squat / live</p>
+              <button aria-label="Connection status">ON</button>
+            </header>
+            <section class="camera-instrument">
+              <div class="corner c1"></div>
+              <div class="corner c2"></div>
+              <div class="corner c3"></div>
+              <div class="corner c4"></div>
+              <div class="pose-asset" aria-hidden="true">
+                <svg viewBox="0 0 210 360" role="img" aria-label="Pose skeleton">
+                  <path class="limb" d="M103 60 L112 142 L94 202 L56 286" />
+                  <path class="limb" d="M112 142 L151 205 L184 286" />
+                  <path class="limb" d="M103 60 L55 116" />
+                  <path class="limb" d="M103 60 L154 112" />
+                  <path class="angle" d="M94 202 A58 58 0 0 0 151 205" />
+                  <circle cx="101" cy="31" r="19" />
+                  <circle cx="103" cy="60" r="7" />
+                  <circle cx="112" cy="142" r="7" />
+                  <circle cx="94" cy="202" r="7" />
+                  <circle cx="151" cy="205" r="7" />
+                  <circle cx="56" cy="286" r="7" />
+                  <circle cx="184" cy="286" r="7" />
+                </svg>
+              </div>
+              <div class="analysis-chip pass">FORM PASS</div>
+              <div class="analysis-chip angle-chip">KNEE 84 DEG</div>
+              <div class="analysis-chip tempo-chip">TEMPO 1.4S</div>
+            </section>
+            <section class="coach-note">
+              <p>AI coach</p>
+              <strong>Depth is clean. Keep chest angle steady on the next rep.</strong>
+            </section>
+            <div class="metric-strip">
+              <span><b>12</b> correct</span>
+              <span><b>2</b> fixes</span>
+              <span><b>Rising</b> state</span>
+            </div>
+            <nav class="tabbar" aria-label="App tabs">
+              <span>Home</span><span class="selected">Train</span><span>Stats</span><span>Me</span>
+            </nav>
+          </article>
+
+          <article class="phone summary-screen" aria-label="Session summary screen">
+            <div class="phone-chrome"></div>
+            <header class="phone-header">
+              <p>Session report</p>
+              <button aria-label="Done">OK</button>
+            </header>
+            <div class="report-score">
+              <span>92%</span>
+              <small>form accuracy</small>
+            </div>
+            <section class="report-grid">
+              <div><b>42</b><span>reps</span></div>
+              <div><b>39</b><span>clean</span></div>
+              <div><b>3</b><span>fixes</span></div>
+            </section>
+            <section class="timeline-card">
+              <h4>Rep timeline</h4>
+              <div class="timeline-bars" aria-hidden="true">
+                <i></i><i></i><i class="warn"></i><i></i><i></i><i></i><i class="warn"></i><i></i>
+              </div>
+              <p>Most corrections appeared when descent tempo dropped below 0.7s.</p>
+            </section>
+            <section class="next-focus">
+              <h4>Next focus</h4>
+              <p>Slow the first half of the squat and hold bottom position for one beat.</p>
+            </section>
+            <nav class="tabbar" aria-label="App tabs">
+              <span>Home</span><span>Train</span><span class="selected">Stats</span><span>Me</span>
+            </nav>
+          </article>
+        </div>
+      </section>
+
+      <section class="implementation-notes">
+        <span class="card-index">06</span>
+        <h2>What This Means For The Flutter Build</h2>
+        <div class="note-grid">
+          <p>
+            The camera screen should become the centerpiece, with analyzer data
+            drawn as an instrument overlay rather than floating decorative cards.
+          </p>
+          <p>
+            Existing app flows stay intact: Auth, Home, Workouts, Record, Stats,
+            Profile, and Session Summary. The redesign changes presentation,
+            not product scope.
+          </p>
+          <p>
+            The system should support both beginner and pro modes through
+            density: beginner sees fewer labels, pro sees more diagnostic ticks.
+          </p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

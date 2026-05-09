@@ -1,7 +1,7 @@
 """
 Flask server for AI Fitness Coach.
 Receives frames from the Flutter app, processes with MediaPipe + AI coaching, returns annotated frames.
-TTS is handled by the Flutter app (ElevenLabs called directly from the phone).
+Voice playback is handled by the backend.
 
 Setup:
     1. Copy .env.example to .env and fill in your API keys.
@@ -27,12 +27,14 @@ from PIL import Image
 
 from ai_coach import AICoach
 from analyzer import SquatAnalyzer, PushupAnalyzer
+from voice import VoiceCoach
 
 app = Flask(__name__)
 CORS(app)
 
 analyzer = None
 ai_coach = None
+voice_coach = None
 _pending_ai_feedback = ""
 current_exercise = "squat"
 current_mode = "beginner"
@@ -75,15 +77,39 @@ def configure_ai_coach(provider="claude", anthropic_key=None, openai_key=None, e
     ai_coach = AICoach(provider=provider, api_key=api_key, exercise=exercise)
 
 
+def configure_voice_coach():
+    global voice_coach
+
+    use_elevenlabs = os.environ.get("USE_ELEVENLABS_VOICE", "true").lower() not in {"0", "false", "no", "off"}
+    api_key = os.environ.get("ELEVENLABS_API_KEY")
+    voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "arnold")
+
+    if not use_elevenlabs:
+        voice_id = os.environ.get("MACOS_VOICE", "samantha")
+
+    if use_elevenlabs and not api_key:
+        print("[Voice] ELEVENLABS_API_KEY not set; falling back to macOS say.")
+        use_elevenlabs = False
+        voice_id = os.environ.get("MACOS_VOICE", "samantha")
+
+    try:
+        voice_coach = VoiceCoach(api_key=api_key, voice_id=voice_id, use_elevenlabs=use_elevenlabs)
+    except Exception as e:
+        print(f"[Voice] Could not initialize voice coach: {e}")
+        voice_coach = None
+
+
 def create_feedback_callback():
     def on_rep_complete(rep_data):
         def process_feedback():
-            global _pending_ai_feedback, ai_coach
+            global _pending_ai_feedback, ai_coach, voice_coach
             try:
                 if ai_coach:
                     feedback = ai_coach.get_feedback(rep_data)
                     print(f"[AI Coach] {feedback}")
                     _pending_ai_feedback = feedback
+                    if voice_coach:
+                        voice_coach.speak(feedback)
                 else:
                     print(f"[Rep Complete] {rep_data}")
             except Exception as e:
@@ -167,6 +193,8 @@ def status():
     return jsonify({
         "provider": ai_coach.provider if ai_coach else None,
         "has_ai_coach": ai_coach is not None,
+        "voice_enabled": voice_coach is not None,
+        "voice_mode": "elevenlabs" if voice_coach and voice_coach.use_elevenlabs else ("macos" if voice_coach else None),
         "exercise": current_exercise,
         "mode": analyzer.mode if analyzer else None,
     })
@@ -186,6 +214,28 @@ def reset():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/speak", methods=["POST"])
+def speak():
+    """Convert text to speech using the configured voice."""
+    try:
+        data = request.get_json()
+        if not data or "text" not in data:
+            return jsonify({"error": "No text provided"}), 400
+        
+        text = data.get("text")
+        
+        if not voice_coach:
+            return jsonify({"error": "Voice coach not initialized"}), 500
+        
+        # Speak the text (voice_coach handles both TTS and playback)
+        voice_coach.speak(text)
+        
+        return jsonify({"success": True, "text": text})
+    except Exception as e:
+        print(f"Error in /speak: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AI Fitness Coach — Server")
     parser.add_argument("--exercise", choices=list(EXERCISE_CLASSES.keys()), default="squat")
@@ -199,6 +249,7 @@ if __name__ == "__main__":
     current_exercise = args.exercise
     current_mode = args.mode
 
+    configure_voice_coach()
     on_rep_callback = create_feedback_callback()
     analyzer = create_analyzer(args.exercise, args.mode, on_rep_callback)
 
@@ -209,7 +260,7 @@ if __name__ == "__main__":
             openai_key=args.openai_key,
             exercise=args.exercise,
         )
-        print(f"AI Coach: {args.provider} (TTS handled by phone)")
+        print(f"AI Coach: {args.provider} (voice handled by backend)")
     except Exception as e:
         print(f"Warning: Could not initialize AI coach: {e}")
         print("Continuing without AI coaching...")

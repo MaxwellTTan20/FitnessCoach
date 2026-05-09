@@ -33,9 +33,9 @@ The server will start on `http://localhost:5000`
    - **AI provider**: `claude` or `openai`
    - **Anthropic API key**: Your API key (or leave blank if using OpenAI)
    - **OpenAI API key**: Your API key (or leave blank if using Claude)
-   - **ElevenLabs API key**: Optional, for voice (or use macOS default)
-   - **Voice ID**: `samantha`, `rachel`, `josh`, etc.
-   - **Use ElevenLabs voice**: Toggle if you have a paid plan
+   - **ElevenLabs API key**: Set on the backend if you want backend voice playback
+   - **Voice ID**: Configure on the backend with `ELEVENLABS_VOICE_ID`
+   - **Use ElevenLabs voice**: Configure on the backend with `USE_ELEVENLABS_VOICE`
 4. Tap **Save backend config**
 5. Tap **Start** to begin recording
 

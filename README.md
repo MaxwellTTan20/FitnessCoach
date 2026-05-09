@@ -23,7 +23,7 @@ python download_model.py
 cp .env.example .env
 # Edit .env with your API keys:
 #   ANTHROPIC_API_KEY=...
-#   ELEVENLABS_API_KEY=...
+#   ELEVENLABS_API_KEY=...  # backend voice only
 ```
 
 ### Run
@@ -42,4 +42,4 @@ Stand sideways to the camera for best detection.
 
 ## Frontend
 
-_TODO_
+The Flutter app now sends feedback to the Python backend only. ElevenLabs voice playback is owned by the backend, so do not keep a separate ElevenLabs key in the mobile app.
