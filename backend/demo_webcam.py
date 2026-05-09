@@ -11,6 +11,7 @@ Usage:
 import argparse
 import subprocess
 import sys
+import threading
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -30,37 +31,41 @@ _last_ai_feedback = None
 
 # Track the current speech subprocess for drop-stale playback
 _current_speech = None
+_speech_lock = threading.Lock()  # Prevent race conditions between threads
 
 
 def speak(text: str) -> None:
     """
     Speak text using macOS `say` command.
     Terminates any in-progress speech before starting new speech (drop-stale).
+    Thread-safe via _speech_lock.
     """
     global _current_speech
 
-    try:
-        # Terminate any in-progress speech
-        if _current_speech is not None and _current_speech.poll() is None:
-            _current_speech.terminate()
+    with _speech_lock:
+        try:
+            # Terminate any in-progress speech
+            if _current_speech is not None and _current_speech.poll() is None:
+                _current_speech.terminate()
 
-        # Start new speech
-        _current_speech = subprocess.Popen(
-            ["say", "-v", VOICE_NAME, "-r", str(VOICE_RATE), text],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception as e:
-        print(f"[Voice] Warning: Could not speak: {e}")
+            # Start new speech
+            _current_speech = subprocess.Popen(
+                ["say", "-v", VOICE_NAME, "-r", str(VOICE_RATE), text],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as e:
+            print(f"[Voice] Warning: Could not speak: {e}")
 
 
 def stop_speech() -> None:
-    """Stop any in-progress speech."""
+    """Stop any in-progress speech. Thread-safe."""
     global _current_speech
 
-    if _current_speech is not None and _current_speech.poll() is None:
-        _current_speech.terminate()
-        _current_speech = None
+    with _speech_lock:
+        if _current_speech is not None and _current_speech.poll() is None:
+            _current_speech.terminate()
+            _current_speech = None
 
 
 def draw_text_bg(frame, text, pos, font_scale=0.5, color=(255, 255, 255), thickness=1):
@@ -167,21 +172,27 @@ def create_rep_callback(ai_coach=None, use_voice=False):
     def on_rep_complete(rep_data):
         global _last_rep_data, _last_ai_feedback
 
+        # Update rep data immediately (synchronous, fast)
         _last_rep_data = rep_data
         pretty_print_rep(rep_data)
 
-        if ai_coach:
-            try:
-                feedback = ai_coach.get_feedback(rep_data)
-                print(f"[AI Coach] {feedback}")
-                _last_ai_feedback = feedback
+        # Process AI feedback in background thread to avoid blocking camera loop
+        def process_async():
+            global _last_ai_feedback
+            if ai_coach is not None:
+                try:
+                    feedback = ai_coach.get_feedback(rep_data)
+                    print(f"[AI Coach] {feedback}")
+                    _last_ai_feedback = feedback
 
-                # Speak feedback if voice is enabled
-                if use_voice:
-                    speak(feedback)
-            except Exception as e:
-                print(f"[AI Coach Error] {e}")
-                _last_ai_feedback = None
+                    # Speak feedback if voice is enabled
+                    if use_voice:
+                        speak(feedback)
+                except Exception as e:
+                    print(f"[AI Coach Error] {e}")
+
+        if ai_coach is not None:
+            threading.Thread(target=process_async, daemon=True).start()
 
     return on_rep_complete
 
