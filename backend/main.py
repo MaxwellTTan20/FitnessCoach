@@ -1,9 +1,13 @@
 """
-Flask server for AI Squat Trainer.
+Flask server for AI Fitness Coach.
 Receives frames from the Flutter app, processes with MediaPipe + AI coaching, returns annotated frames.
 TTS is handled by the Flutter app (ElevenLabs called directly from the phone).
 
-Run: python main.py [--mode pro]
+Setup:
+    1. Copy .env.example to .env and fill in your API keys.
+    2. Keys are loaded automatically via python-dotenv, or source .env before running.
+
+Run: python main.py [--exercise squat|pushup] [--mode beginner|pro]
 """
 import argparse
 import base64
@@ -12,6 +16,9 @@ import os
 import socket
 import threading
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import cv2
 import numpy as np
 from flask import Flask, jsonify, request
@@ -19,9 +26,7 @@ from flask_cors import CORS
 from PIL import Image
 
 from ai_coach import AICoach
-from analyzer import SquatAnalyzer
-
-ANTHROPIC_API_KEY = "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"
+from analyzer import SquatAnalyzer, PushupAnalyzer
 
 app = Flask(__name__)
 CORS(app)
@@ -29,14 +34,37 @@ CORS(app)
 analyzer = None
 ai_coach = None
 _pending_ai_feedback = ""
+current_exercise = "squat"
+current_mode = "beginner"
+
+EXERCISE_CLASSES = {
+    "squat": SquatAnalyzer,
+    "pushup": PushupAnalyzer,
+}
 
 
-def configure_ai_coach(provider="claude", anthropic_key=ANTHROPIC_API_KEY, openai_key=None):
+def normalize_exercise(name: str) -> str:
+    """Normalize exercise name to a key in EXERCISE_CLASSES."""
+    return name.lower().replace("-", "").replace(" ", "")
+
+
+def create_analyzer(exercise: str, mode: str, callback):
+    cls = EXERCISE_CLASSES.get(normalize_exercise(exercise))
+    if cls is None:
+        raise ValueError(f"No analyzer available for exercise '{exercise}'. "
+                         f"Supported: {list(EXERCISE_CLASSES.keys())}")
+    return cls(mode=mode, on_rep_complete=callback)
+
+
+def configure_ai_coach(provider="claude", anthropic_key=None, openai_key=None, exercise="squat"):
     global ai_coach
 
     if not provider:
         ai_coach = None
         return
+
+    anthropic_key = anthropic_key or os.environ.get("ANTHROPIC_API_KEY")
+    openai_key = openai_key or os.environ.get("OPENAI_API_KEY")
 
     if anthropic_key:
         os.environ["ANTHROPIC_API_KEY"] = anthropic_key
@@ -44,7 +72,7 @@ def configure_ai_coach(provider="claude", anthropic_key=ANTHROPIC_API_KEY, opena
         os.environ["OPENAI_API_KEY"] = openai_key
 
     api_key = anthropic_key if provider == "claude" else openai_key
-    ai_coach = AICoach(provider=provider, api_key=api_key)
+    ai_coach = AICoach(provider=provider, api_key=api_key, exercise=exercise)
 
 
 def create_feedback_callback():
@@ -85,19 +113,10 @@ def process_frame():
         _, buffer = cv2.imencode(".jpg", annotated_frame_rgb, [cv2.IMWRITE_JPEG_QUALITY, 85])
         annotated_b64 = base64.b64encode(buffer).decode("utf-8")
 
-        # Grab and clear any pending AI feedback so the phone can speak it.
         ai_feedback = _pending_ai_feedback
         _pending_ai_feedback = ""
 
-        stats = {
-            "correct_count": analyzer.correct_count,
-            "incorrect_count": analyzer.incorrect_count,
-            "current_feedback": analyzer.feedback,
-            "is_in_rep": analyzer.state == "squatting",
-            "knee_angle": round(analyzer.knee_angle, 1),
-            "hip_angle": round(analyzer.hip_angle, 1),
-            "state": analyzer.state,
-        }
+        stats = analyzer.get_stats_for_api()
 
         return jsonify({
             "annotated_image": annotated_b64,
@@ -113,15 +132,31 @@ def process_frame():
 
 @app.route("/configure", methods=["POST"])
 def configure():
+    global analyzer, current_exercise, current_mode
     try:
         data = request.get_json(force=True)
         provider = data.get("provider", "claude")
-        anthropic_key = data.get("anthropic_key") or ANTHROPIC_API_KEY
+        anthropic_key = data.get("anthropic_key")
         openai_key = data.get("openai_key")
+        exercise = normalize_exercise(data.get("exercise", current_exercise))
+        mode = data.get("mode", current_mode)
 
-        configure_ai_coach(provider=provider, anthropic_key=anthropic_key, openai_key=openai_key)
+        configure_ai_coach(
+            provider=provider,
+            anthropic_key=anthropic_key,
+            openai_key=openai_key,
+            exercise=exercise,
+        )
 
-        return jsonify({"success": True, "provider": provider})
+        # Recreate analyzer only if exercise or mode changed
+        if exercise != current_exercise or mode != current_mode:
+            if analyzer is not None:
+                analyzer.close()
+            analyzer = create_analyzer(exercise, mode, create_feedback_callback())
+            current_exercise = exercise
+            current_mode = mode
+
+        return jsonify({"success": True, "provider": provider, "exercise": exercise, "mode": mode})
     except Exception as e:
         print(f"Error configuring backend: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
@@ -132,6 +167,7 @@ def status():
     return jsonify({
         "provider": ai_coach.provider if ai_coach else None,
         "has_ai_coach": ai_coach is not None,
+        "exercise": current_exercise,
         "mode": analyzer.mode if analyzer else None,
     })
 
@@ -151,22 +187,27 @@ def reset():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AI Squat Trainer — Server")
+    parser = argparse.ArgumentParser(description="AI Fitness Coach — Server")
+    parser.add_argument("--exercise", choices=list(EXERCISE_CLASSES.keys()), default="squat")
     parser.add_argument("--mode", choices=["beginner", "pro"], default="beginner")
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--provider", choices=["claude", "openai"], default="claude")
-    parser.add_argument("--anthropic-key", default=ANTHROPIC_API_KEY)
+    parser.add_argument("--anthropic-key", default=None)
     parser.add_argument("--openai-key", default=None)
     args = parser.parse_args()
 
+    current_exercise = args.exercise
+    current_mode = args.mode
+
     on_rep_callback = create_feedback_callback()
-    analyzer = SquatAnalyzer(mode=args.mode, on_rep_complete=on_rep_callback)
+    analyzer = create_analyzer(args.exercise, args.mode, on_rep_callback)
 
     try:
         configure_ai_coach(
             provider=args.provider,
             anthropic_key=args.anthropic_key,
             openai_key=args.openai_key,
+            exercise=args.exercise,
         )
         print(f"AI Coach: {args.provider} (TTS handled by phone)")
     except Exception as e:
@@ -177,7 +218,7 @@ if __name__ == "__main__":
         local_ip = socket.gethostbyname(socket.gethostname())
     except Exception:
         local_ip = "unknown"
-    print(f"Mode: {args.mode} | Port: {args.port}")
+    print(f"Exercise: {args.exercise} | Mode: {args.mode} | Port: {args.port}")
     print(f"╔══════════════════════════════════════╗")
     print(f"║  Set Flutter server URL to:          ║")
     print(f"║  http://{local_ip}:{args.port}".ljust(39) + "║")
