@@ -56,13 +56,20 @@ class AICoach:
 
     def _format_rep_data(self, rep_data: dict) -> str:
         tempo = rep_data.get("tempo", {})
-        descent = tempo.get("descent_seconds", 0)
-        ascent = tempo.get("ascent_seconds", 0)
+        descent = tempo.get("descent_seconds")
+        ascent = tempo.get("ascent_seconds")
+        tempo_status = tempo.get("status", "unknown")
+
+        # Format tempo string with status
+        descent_str = f"{descent:.1f}s" if descent is not None else "?"
+        ascent_str = f"{ascent:.1f}s" if ascent is not None else "?"
+        tempo_str = f"{descent_str} descent, {ascent_str} ascent ({tempo_status})"
+
         return f"""Rep #{rep_data['rep_number']} completed:
 - Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
 - Knee angle at depth: {rep_data['knee_angle']:.0f} degrees
 - Hip/torso angle at depth: {rep_data['hip_angle']:.0f} degrees
-- Tempo: {descent:.1f}s descent, {ascent:.1f}s ascent
+- Tempo: {tempo_str}
 - Mode: {rep_data['mode']}
 - Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
 

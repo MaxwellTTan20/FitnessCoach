@@ -163,15 +163,28 @@ class SquatAnalyzer:
             # Analyze the rep using smoothed values from deepest position
             rep_analysis = self._analyze_rep()
 
-            # Form check: depth + torso lean at deepest position
-            is_correct = t["hip_angle_low"] <= rep_analysis["hip_angle"] <= t["hip_angle_high"]
+            # Form checks (all must pass for is_correct=True)
+            depth_ok = rep_analysis["knee_angle"] <= t["knee_angle_correct"]
+            torso_ok = t["hip_angle_low"] <= rep_analysis["hip_angle"] <= t["hip_angle_high"]
+            tempo_status = rep_analysis["tempo"]["status"]
+            tempo_ok = tempo_status in ("ok", "unknown")
+
+            is_correct = depth_ok and torso_ok and tempo_ok
 
             if is_correct:
                 self.correct_count += 1
                 self.feedback = "Good rep!"
             else:
                 self.incorrect_count += 1
-                self.feedback = f"Check torso lean ({rep_analysis['hip_angle']:.0f}°)"
+                # Provide specific feedback based on what failed (priority order)
+                if not depth_ok:
+                    self.feedback = f"Go deeper ({rep_analysis['knee_angle']:.0f}° < {t['knee_angle_correct']}° needed)"
+                elif not torso_ok:
+                    self.feedback = f"Check torso lean ({rep_analysis['hip_angle']:.0f}°)"
+                elif tempo_status == "bounced_out":
+                    self.feedback = "Don't bounce - control the ascent"
+                elif tempo_status == "rushed_descent":
+                    self.feedback = "Slow down the descent"
 
             if self.on_rep_complete:
                 # Pass a copy of the buffer since it may continue to be modified
@@ -226,7 +239,7 @@ class SquatAnalyzer:
                 "knee_angle": 0.0,
                 "hip_angle": 0.0,
                 "deepest_frame_index": None,
-                "tempo": {"descent_seconds": None, "ascent_seconds": None},
+                "tempo": {"descent_seconds": None, "ascent_seconds": None, "status": "unknown"},
             }
 
         # Find deepest frame index (minimum knee_angle)
@@ -263,6 +276,7 @@ class SquatAnalyzer:
         Convert to seconds assuming ~33ms per frame.
 
         Returns None for descent/ascent if too few frames to be reliable.
+        Also computes a status: "ok", "rushed_descent", "bounced_out", or "unknown".
         """
         descent_frames = deepest_index
         ascent_frames = buffer_length - deepest_index - 1
@@ -283,9 +297,21 @@ class SquatAnalyzer:
         else:
             ascent_seconds = None  # Insufficient data
 
+        # Compute tempo status
+        if descent_seconds is None or ascent_seconds is None:
+            status = "unknown"
+        elif ascent_seconds < 0.3:
+            # Bouncing out of bottom is dangerous - takes priority
+            status = "bounced_out"
+        elif descent_seconds < 0.45:
+            status = "rushed_descent"
+        else:
+            status = "ok"
+
         return {
             "descent_seconds": descent_seconds,
             "ascent_seconds": ascent_seconds,
+            "status": status,
         }
 
     def _draw_landmarks(self, frame, landmarks, w, h):

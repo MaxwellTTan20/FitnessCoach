@@ -14,16 +14,19 @@ INACTIVE_THRESH = 15.0
 
 THRESHOLDS = {
     "beginner": {
-        # Hip-knee-ankle angle below this = squat is deep enough
-        "knee_angle_low": 80,    # below this = in squat position
-        "knee_angle_high": 160,  # above this = standing
+        # State machine thresholds
+        "knee_angle_low": 90,    # below this = enter squatting state (raised to capture more attempts)
+        "knee_angle_high": 160,  # above this = exit squatting state
+        # Form correctness threshold (separate from state machine)
+        "knee_angle_correct": 75,  # rep is "deep enough" only if deepest knee angle <= this
         # Shoulder-hip-knee angle range for acceptable torso lean
         "hip_angle_low": 50,
         "hip_angle_high": 120,
     },
     "pro": {
-        "knee_angle_low": 60,    # pro requires deeper squat
+        "knee_angle_low": 80,    # pro still needs decent depth to register
         "knee_angle_high": 160,
+        "knee_angle_correct": 60,  # pro requires deeper squat to be "correct"
         "hip_angle_low": 30,
         "hip_angle_high": 110,
     },

@@ -60,7 +60,7 @@ def draw_overlays(frame, analyzer):
     # --- Bottom left: last rep info ---
     if _last_rep_data:
         rep = _last_rep_data
-        y = h - 140
+        y = h - 160
         y += draw_text_bg(frame, f"--- Last Rep #{rep.get('rep_number', '?')} ---", (10, y), color=(200, 200, 200))
         status = "GOOD" if rep.get("is_correct") else "BAD"
         color = (0, 255, 0) if rep.get("is_correct") else (0, 0, 255)
@@ -77,9 +77,17 @@ def draw_overlays(frame, analyzer):
         tempo = rep.get("tempo", {})
         descent = tempo.get('descent_seconds')
         ascent = tempo.get('ascent_seconds')
+        tempo_status = tempo.get('status', 'unknown')
         descent_str = f"{descent:.1f}s" if descent is not None else "?"
         ascent_str = f"{ascent:.1f}s" if ascent is not None else "?"
-        y += draw_text_bg(frame, f"Tempo: {descent_str} down / {ascent_str} up", (10, y), color=(180, 255, 180))
+        # Color based on tempo status
+        if tempo_status == "ok":
+            tempo_color = (180, 255, 180)  # green
+        elif tempo_status == "unknown":
+            tempo_color = (180, 180, 180)  # gray
+        else:
+            tempo_color = (0, 0, 255)  # red for rushed/bounced
+        y += draw_text_bg(frame, f"Tempo: {descent_str} down / {ascent_str} up ({tempo_status})", (10, y), color=tempo_color)
 
     # Show AI feedback if available
     if _last_ai_feedback:
