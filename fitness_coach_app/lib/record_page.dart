@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
@@ -13,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'session_summary.dart';
 import 'user_profile.dart';
+import 'workout_state.dart';
 
 // --- Config (edit these to change behaviour) ---
 const String _kAnthropicKey =
@@ -66,6 +68,11 @@ class _RecordPageState extends State<RecordPage> {
   // Accumulates per-exercise counts across the whole session.
   // Key: exercise name, Value: {correct, incorrect}
   Map<String, Map<String, int>> _sessionExerciseStats = {};
+
+  // Active workout goals (null = free session with no goals).
+  ActiveWorkout? _activeWorkout;
+  bool _workoutComplete = false;  // true once all goals are hit
+  bool _showCelebration = false;  // drives the star overlay
   String _serverUrl = _kServerUrl;
   String _provider = _kProvider;
   String _anthropicKey = _kAnthropicKey;
@@ -82,7 +89,48 @@ class _RecordPageState extends State<RecordPage> {
         options: {AVAudioSessionOptions.mixWithOthers},
       ),
     ));
+    _activeWorkout = WorkoutState.instance.activeWorkout;
     _loadSavedServerUrl().then((_) => _initializeCamera()).then((_) => _autoConfigureBackend());
+  }
+
+  // Total correct reps for an exercise across the whole session (flushed + live).
+  int _totalCorrectFor(String exercise) {
+    final flushed = _sessionExerciseStats[exercise]?['correct'] ?? 0;
+    if (_selectedExercise == exercise) {
+      return flushed + (_stats['correct_count'] as num? ?? 0).toInt();
+    }
+    return flushed;
+  }
+
+  // Total reps attempted (correct + incorrect) for an exercise this session.
+  int _totalAttemptedFor(String exercise) {
+    final fc = _sessionExerciseStats[exercise]?['correct'] ?? 0;
+    final fi = _sessionExerciseStats[exercise]?['incorrect'] ?? 0;
+    if (_selectedExercise == exercise) {
+      final lc = (_stats['correct_count']   as num? ?? 0).toInt();
+      final li = (_stats['incorrect_count'] as num? ?? 0).toInt();
+      return fc + fi + lc + li;
+    }
+    return fc + fi;
+  }
+
+  // The active workout goal for a given exercise, or null if not in the plan.
+  WorkoutGoal? _goalFor(String exercise) =>
+      _activeWorkout?.goals
+          .where((g) => g.exercise == exercise)
+          .firstOrNull;
+
+  void _checkGoals() {
+    if (_workoutComplete || _activeWorkout == null) return;
+    final allDone = _activeWorkout!.goals.every(
+      (g) => _totalCorrectFor(g.exercise) >= g.targetReps,
+    );
+    if (allDone) {
+      setState(() {
+        _workoutComplete = true;
+        _showCelebration = true;
+      });
+    }
   }
 
   Future<void> _loadSavedServerUrl() async {
@@ -183,7 +231,13 @@ class _RecordPageState extends State<RecordPage> {
     _flushCurrentExerciseStats();
     final snapshot = Map<String, Map<String, int>>.from(_sessionExerciseStats);
     _sessionExerciseStats = {};
+    // Clear workout state so the next session starts fresh.
+    WorkoutState.instance.activeWorkout = null;
+    _activeWorkout = null;
+    _workoutComplete = false;
+    _showCelebration = false;
     if (_isProcessing) _stopProcessing();
+    _resetSession(); // clears stats + resets backend for the next session
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SessionSummaryPage(exerciseStats: snapshot),
@@ -198,6 +252,13 @@ class _RecordPageState extends State<RecordPage> {
       _frameInFlight = false;
       _annotatedImage = null;
       _poseLandmarks = [];
+      // _stats kept intentionally — Stop preserves rep counts.
+      // Backend also keeps state so Start resumes where we left off.
+    });
+  }
+
+  void _resetSession() {
+    setState(() {
       _stats = {
         'correct_count': 0,
         'incorrect_count': 0,
@@ -295,6 +356,7 @@ class _RecordPageState extends State<RecordPage> {
             _stats = newStats;
             _poseLandmarks = landmarks;
           });
+          _checkGoals();
         }
 
         final aiFeedback = data['ai_feedback'] as String? ?? '';
@@ -512,7 +574,9 @@ class _RecordPageState extends State<RecordPage> {
           ),
         ],
       ),
-      body: SafeArea(
+      body: Stack(
+        children: [
+          SafeArea(
         child: Padding(
           padding: EdgeInsets.all(isSmall ? 12.0 : 18.0),
           child: Column(
@@ -760,48 +824,87 @@ class _RecordPageState extends State<RecordPage> {
                 ],
               ),
               SizedBox(height: isSmall ? 10 : 12),
-              Row(
-                children: [
-                  ElevatedButton(
-                    onPressed: _finishSession,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:Color.fromARGB(255, 137, 9, 9),
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isSmall ? 20 : 28,
-                        vertical: isSmall ? 12 : 14,
+              // ── Buttons row with inline rings on the left ─────────────────
+              Builder(builder: (_) {
+                final rings = <Widget>[];
+                for (final exercise in AppProfile.exercises) {
+                  final goal    = _goalFor(exercise);
+                  final correct = _totalCorrectFor(exercise);
+                  final total   = _totalAttemptedFor(exercise);
+                  if (goal == null && total == 0) continue;
+                  rings.add(_GoalRing(
+                    exercise: exercise,
+                    goal: goal,
+                    correct: correct,
+                    total: total,
+                  ));
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Rings on the far left — fixed max-width so Spacer gets
+                    // all remaining space and buttons stay pinned to the right.
+                    if (rings.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 168),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(children: rings),
+                        ),
                       ),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24)),
-                    ),
-                    child: Text('Finish Session')
-                  ),
-                  const Spacer(),
-                  ElevatedButton(
-                    onPressed:
-                        _isProcessing ? _stopProcessing : _startProcessing,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                          _isProcessing ? Colors.redAccent : Colors.green,
-                      foregroundColor: Colors.white,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: isSmall ? 20 : 28,
-                        vertical: isSmall ? 12 : 14,
+                    const Spacer(),
+                    ElevatedButton(
+                      onPressed: _finishSession,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color.fromARGB(255, 137, 9, 9),
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isSmall ? 14 : 20,
+                          vertical: isSmall ? 12 : 14,
+                        ),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24)),
                       ),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24)),
+                      child: const Text('Finish'),
                     ),
-                    child: Text(
-                      _isProcessing ? 'Stop' : 'Start',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed:
+                          _isProcessing ? _stopProcessing : _startProcessing,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            _isProcessing ? Colors.redAccent : Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isSmall ? 20 : 28,
+                          vertical: isSmall ? 12 : 14,
+                        ),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24)),
+                      ),
+                      child: Text(
+                        _isProcessing ? 'Stop' : 'Start',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                );
+              }),
             ],
           ),
         ),
-      ),
+      ),  // SafeArea
+          // ── Star celebration overlay ─────────────────────────────────────
+          if (_showCelebration)
+            Positioned.fill(
+              child: _CelebrationOverlay(
+                onComplete: () {
+                  if (mounted) setState(() => _showCelebration = false);
+                },
+              ),
+            ),
+        ],
+      ),  // Stack
     );
   }
 
@@ -1025,4 +1128,262 @@ class _PosePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _PosePainter old) =>
       old.poseLandmarks != poseLandmarks;
+}
+
+// ── Goal ring ─────────────────────────────────────────────────────────────────
+
+class _GoalRing extends StatelessWidget {
+  final String exercise;
+  final WorkoutGoal? goal;  // null → not in active workout
+  final int correct;        // correct reps this session
+  final int total;          // total reps attempted this session
+
+  const _GoalRing({
+    required this.exercise,
+    required this.correct,
+    required this.total,
+    this.goal,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isGoal   = goal != null;
+    final target   = goal?.targetReps ?? 0;
+    final done     = isGoal && correct >= target;
+    final progress = isGoal ? (correct / target).clamp(0.0, 1.0) : 0.0;
+
+    // Cyan arc for workout goals → green when done; white-ish circle for extras
+    final color = done ? Colors.greenAccent
+        : isGoal ? Colors.cyanAccent
+        : Colors.white38;
+
+    final abbrev = exercise.length >= 2 ? exercise.substring(0, 2) : exercise;
+    final label  = isGoal
+        ? '${correct.clamp(0, target)}/$target'
+        : '$total';
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: CustomPaint(
+              painter: _RingPainter(progress: progress, color: color),
+              child: Center(
+                child: done
+                    ? const Icon(Icons.check, color: Colors.greenAccent, size: 14)
+                    : Text(abbrev,
+                        style: TextStyle(
+                            color: color,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(label,
+              style: TextStyle(
+                  color: isGoal ? Colors.white54 : Colors.white30,
+                  fontSize: 9)),
+        ],
+      ),
+    );
+  }
+}
+
+class _RingPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  const _RingPainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final r  = math.min(cx, cy) - 3;
+
+    canvas.drawCircle(Offset(cx, cy), r,
+        Paint()
+          ..color = Colors.white12
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4);
+
+    if (progress > 0) {
+      canvas.drawArc(
+        Rect.fromCircle(center: Offset(cx, cy), radius: r),
+        -math.pi / 2,
+        2 * math.pi * progress,
+        false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter old) =>
+      old.progress != progress || old.color != color;
+}
+
+// ── Star celebration overlay ──────────────────────────────────────────────────
+
+class _StarData {
+  final double angle;
+  final double distance;
+  final double size;
+  final Color color;
+  const _StarData(
+      {required this.angle,
+      required this.distance,
+      required this.size,
+      required this.color});
+}
+
+class _CelebrationOverlay extends StatefulWidget {
+  final VoidCallback onComplete;
+  const _CelebrationOverlay({required this.onComplete});
+
+  @override
+  State<_CelebrationOverlay> createState() => _CelebrationOverlayState();
+}
+
+class _CelebrationOverlayState extends State<_CelebrationOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final List<_StarData> _stars;
+
+  static const _colors = [
+    Colors.yellow,
+    Colors.orange,
+    Colors.cyanAccent,
+    Colors.white,
+    Colors.pinkAccent,
+    Colors.greenAccent,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final rng = math.Random();
+    _stars = List.generate(22, (i) => _StarData(
+      angle:    rng.nextDouble() * 2 * math.pi,
+      distance: 80 + rng.nextDouble() * 140,
+      size:     9  + rng.nextDouble() * 13,
+      color:    _colors[i % _colors.length],
+    ));
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    )..forward().whenComplete(widget.onComplete);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, _) {
+        final t    = _ctrl.value;
+        final fade = (t < 0.72 ? 1.0 : (1.0 - t) / 0.28).clamp(0.0, 1.0);
+        return Opacity(
+          opacity: fade,
+          child: Stack(
+            children: [
+              Container(color: Colors.black54),
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _StarsBurstPainter(stars: _stars, t: t),
+                ),
+              ),
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Transform.scale(
+                      scale: Curves.elasticOut
+                          .transform((t * 3).clamp(0.0, 1.0)),
+                      child: const Text('⭐',
+                          style: TextStyle(fontSize: 72)),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Workout Complete!',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        shadows: [
+                          Shadow(
+                              blurRadius: 20,
+                              color: Colors.cyanAccent)
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'All goals achieved 🎯',
+                      style:
+                          TextStyle(color: Colors.white70, fontSize: 15),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _StarsBurstPainter extends CustomPainter {
+  final List<_StarData> stars;
+  final double t;
+  const _StarsBurstPainter({required this.stars, required this.t});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx      = size.width / 2;
+    final cy      = size.height / 2;
+    final spread  = Curves.easeOut.transform(math.min(t / 0.35, 1.0));
+    final opacity = (t < 0.65 ? 1.0 : (1.0 - t) / 0.35).clamp(0.0, 1.0);
+
+    for (final s in stars) {
+      final dist = s.distance * spread;
+      final x    = cx + dist * math.cos(s.angle);
+      final y    = cy + dist * math.sin(s.angle);
+      _drawStar(canvas, Offset(x, y), s.size * spread.clamp(0.2, 1.0),
+          s.color.withValues(alpha: opacity));
+    }
+  }
+
+  void _drawStar(Canvas canvas, Offset center, double r, Color color) {
+    final path = Path();
+    const n = 5;
+    for (int i = 0; i < n * 2; i++) {
+      final angle = (i * math.pi / n) - math.pi / 2;
+      final radius = i.isEven ? r : r * 0.42;
+      final pt = Offset(
+        center.dx + radius * math.cos(angle),
+        center.dy + radius * math.sin(angle),
+      );
+      i == 0 ? path.moveTo(pt.dx, pt.dy) : path.lineTo(pt.dx, pt.dy);
+    }
+    path.close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_StarsBurstPainter old) => old.t != t;
 }

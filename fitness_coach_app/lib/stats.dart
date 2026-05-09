@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import 'user_profile.dart';
@@ -7,11 +8,19 @@ import 'user_profile.dart';
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const _exerciseColors = [
-  Color(0xFF1E88E5), // Squat  – blue
-  Color(0xFFE53935), // Bench  – red
+  Color(0xFF1E88E5), // Squat    – blue
+  Color(0xFFE53935), // Bench    – red
   Color(0xFF78909C), // Deadlift – blue-grey
-  Color(0xFF43A047), // Push-up – green
+  Color(0xFF43A047), // Push-up  – green
 ];
+
+// Approximate kcal burned per rep (all-comers average, 70 kg person).
+const _caloriesPerRep = {
+  'Squat':    0.50,
+  'Bench':    0.32,
+  'Deadlift': 0.60,
+  'Push-up':  0.35,
+};
 
 enum _Period { day, week, month, year }
 
@@ -46,14 +55,144 @@ class StatsPage extends StatefulWidget {
 
 class _StatsPageState extends State<StatsPage> {
   _Period _period = _Period.week;
+  bool _loading = true;
 
-  // Placeholder — swap these lists with real data later
-  final List<int> _reps = [0, 0, 0, 0];
-  final List<double> _accuracy = [0.0, 0.0, 0.0, 0.0];
-  // Progression: one list of y-values (0–1) per exercise, matching xLabels length
-  List<List<double>> get _progression =>
-      List.generate(4, (_) => List.filled(_period.xLabels.length, 0.0));
-  final int _calories = 0;
+  // Raw sessions pulled once from Firestore; reused across period switches.
+  List<Map<String, dynamic>> _allSessions = [];
+
+  // Computed for the current period.
+  List<int>    _reps        = List.filled(4, 0);
+  List<double> _accuracy    = List.filled(4, 0.0);
+  List<List<double>> _progression = List.generate(4, (_) => []);
+  int _calories = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSessions();
+  }
+
+  // ── Data fetching ──────────────────────────────────────────────────────────
+
+  Future<void> _loadSessions() async {
+    final uid = AppProfile.instance.auth0UserId;
+    if (uid != null && uid.isNotEmpty) {
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('sessions')
+            .orderBy('completedAt')
+            .get();
+        _allSessions = snap.docs.map((d) => d.data()).toList();
+      } catch (e) {
+        debugPrint('[Stats] load error: $e');
+      }
+    }
+    _computeStats();
+  }
+
+  // ── Stats computation ──────────────────────────────────────────────────────
+
+  void _computeStats() {
+    final now = DateTime.now();
+    final start = _periodStart(now);
+    final numBuckets = _period.xLabels.length;
+
+    // Sessions in the selected window.
+    final sessions = _allSessions.where((s) {
+      final ts = s['completedAt'] as Timestamp?;
+      if (ts == null) return false;
+      return !ts.toDate().isBefore(start);
+    }).toList();
+
+    final reps    = List.filled(4, 0);
+    final correct = List.filled(4, 0);
+    final total   = List.filled(4, 0);
+    var caloriesF = 0.0;
+
+    // progression[exerciseIdx][bucketIdx] = (correct, total) pairs
+    final progCorrect = List.generate(4, (_) => List.filled(numBuckets, 0));
+    final progTotal   = List.generate(4, (_) => List.filled(numBuckets, 0));
+
+    for (final session in sessions) {
+      final ts = (session['completedAt'] as Timestamp?)?.toDate();
+      if (ts == null) continue;
+      final bucket = _timeBucket(ts, now);
+      if (bucket < 0 || bucket >= numBuckets) continue;
+
+      final lifts = (session['lifts'] as List<dynamic>?) ?? [];
+      for (final raw in lifts) {
+        final lift = raw as Map<String, dynamic>;
+        final name = lift['exercise'] as String? ?? '';
+        final idx  = AppProfile.exercises.indexOf(name);
+        if (idx < 0) continue;
+
+        final lCorrect   = (lift['correctCount']   as num? ?? 0).toInt();
+        final lIncorrect = (lift['incorrectCount']  as num? ?? 0).toInt();
+        final lTotal     = lCorrect + lIncorrect;
+
+        reps[idx]    += lTotal;
+        correct[idx] += lCorrect;
+        total[idx]   += lTotal;
+
+        progCorrect[idx][bucket] += lCorrect;
+        progTotal[idx][bucket]   += lTotal;
+
+        caloriesF += lTotal * (_caloriesPerRep[name] ?? 0.35);
+      }
+    }
+
+    setState(() {
+      _loading = false;
+      _reps = reps;
+      _accuracy = List.generate(4, (i) =>
+          total[i] > 0 ? correct[i] / total[i] : 0.0);
+      _progression = List.generate(4, (i) =>
+          List.generate(numBuckets, (j) =>
+              progTotal[i][j] > 0
+                  ? progCorrect[i][j] / progTotal[i][j]
+                  : 0.0));
+      _calories = caloriesF.round();
+    });
+  }
+
+  DateTime _periodStart(DateTime now) {
+    switch (_period) {
+      case _Period.day:
+        return DateTime(now.year, now.month, now.day);
+      case _Period.week:
+        // Start on Monday of the current week.
+        return DateTime(now.year, now.month, now.day)
+            .subtract(Duration(days: now.weekday - 1));
+      case _Period.month:
+        return DateTime(now.year, now.month, 1);
+      case _Period.year:
+        return DateTime(now.year, 1, 1);
+    }
+  }
+
+  // Returns the 0-based bucket index for a session timestamp.
+  int _timeBucket(DateTime dt, DateTime now) {
+    switch (_period) {
+      case _Period.day:
+        if (dt.hour < 6)  return -1; // before 6am — skip
+        if (dt.hour < 9)  return 0;
+        if (dt.hour < 12) return 1;
+        if (dt.hour < 15) return 2;
+        if (dt.hour < 18) return 3;
+        if (dt.hour < 21) return 4;
+        return 5;
+      case _Period.week:
+        return dt.weekday - 1; // 0=Mon … 6=Sun
+      case _Period.month:
+        return ((dt.day - 1) / 7).floor().clamp(0, 3);
+      case _Period.year:
+        return ((dt.month - 1) / 2).floor(); // 0=Jan-Feb … 5=Nov-Dec
+    }
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -70,50 +209,53 @@ class _StatsPageState extends State<StatsPage> {
       ),
       child: SafeArea(
         bottom: false,
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPad),
-          physics: const BouncingScrollPhysics(),
-          children: [
-            _buildHeader(),
-            const SizedBox(height: 20),
-            _buildPeriodToggle(),
-            const SizedBox(height: 28),
-            _label('REPS PER EXERCISE'),
-            const SizedBox(height: 12),
-            _chartCard(
-              height: 190,
-              child: CustomPaint(
-                painter: _BarChartPainter(
-                  values: _reps,
-                  labels: AppProfile.exercises,
-                  colors: _exerciseColors,
-                ),
+        child: _loading
+            ? const Center(
+                child: CircularProgressIndicator(color: Colors.cyanAccent))
+            : ListView(
+                padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPad),
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 20),
+                  _buildPeriodToggle(),
+                  const SizedBox(height: 28),
+                  _label('REPS PER EXERCISE'),
+                  const SizedBox(height: 12),
+                  _chartCard(
+                    height: 190,
+                    child: CustomPaint(
+                      painter: _BarChartPainter(
+                        values: _reps,
+                        labels: AppProfile.exercises,
+                        colors: _exerciseColors,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  _label('FORM ACCURACY'),
+                  const SizedBox(height: 12),
+                  _buildAccuracyGrid(),
+                  const SizedBox(height: 28),
+                  _label('ACCURACY PROGRESSION'),
+                  const SizedBox(height: 12),
+                  _chartCard(
+                    height: 210,
+                    child: CustomPaint(
+                      painter: _LineChartPainter(
+                        series: _progression,
+                        xLabels: _period.xLabels,
+                        colors: _exerciseColors,
+                        exerciseLabels: AppProfile.exercises,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  _label('CALORIES BURNED'),
+                  const SizedBox(height: 12),
+                  _buildCaloriesCard(),
+                ],
               ),
-            ),
-            const SizedBox(height: 28),
-            _label('FORM ACCURACY'),
-            const SizedBox(height: 12),
-            _buildAccuracyGrid(),
-            const SizedBox(height: 28),
-            _label('ACCURACY PROGRESSION'),
-            const SizedBox(height: 12),
-            _chartCard(
-              height: 210,
-              child: CustomPaint(
-                painter: _LineChartPainter(
-                  series: _progression,
-                  xLabels: _period.xLabels,
-                  colors: _exerciseColors,
-                  exerciseLabels: AppProfile.exercises,
-                ),
-              ),
-            ),
-            const SizedBox(height: 28),
-            _label('CALORIES BURNED'),
-            const SizedBox(height: 12),
-            _buildCaloriesCard(),
-          ],
-        ),
       ),
     );
   }
@@ -161,7 +303,10 @@ class _StatsPageState extends State<StatsPage> {
           final sel = _period == p;
           return Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => _period = p),
+              onTap: () {
+                _period = p;      // set before computeStats calls setState
+                _computeStats();
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(vertical: 9),
@@ -277,7 +422,7 @@ class _StatsPageState extends State<StatsPage> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'Approximate calories burned',
+                'Estimated from all attempted reps',
                 style: TextStyle(color: Colors.white54, fontSize: 12),
               ),
             ],
@@ -338,13 +483,12 @@ class _BarChartPainter extends CustomPainter {
     final gridPaint = Paint()
       ..color = Colors.white10
       ..strokeWidth = 1;
-    final textStyle = const TextStyle(color: Colors.white38, fontSize: 10);
+    const textStyle = TextStyle(color: Colors.white38, fontSize: 10);
 
     // Horizontal grid lines + Y axis labels
     for (int i = 0; i <= gridLines; i++) {
       final y = chartH * (1 - i / gridLines);
-      canvas.drawLine(
-          Offset(axisW, y), Offset(size.width, y), gridPaint);
+      canvas.drawLine(Offset(axisW, y), Offset(size.width, y), gridPaint);
       final label = (maxVal * i ~/ gridLines).toString();
       _drawText(canvas, label, Offset(0, y - 7), textStyle,
           width: axisW - 4, align: TextAlign.right);
@@ -358,9 +502,9 @@ class _BarChartPainter extends CustomPainter {
       final barH = values[i] == 0
           ? 3.0
           : (chartH * values[i] / maxVal).clamp(3.0, chartH);
-      final left = axisW + i * barGroupW + barInset;
+      final left  = axisW + i * barGroupW + barInset;
       final right = axisW + (i + 1) * barGroupW - barInset;
-      final top = chartH - barH;
+      final top   = chartH - barH;
 
       final barPaint = Paint()
         ..color = values[i] == 0
@@ -371,7 +515,6 @@ class _BarChartPainter extends CustomPainter {
           left, top, right, chartH, const Radius.circular(6));
       canvas.drawRRect(rr, barPaint);
 
-      // X label
       _drawText(
         canvas,
         labels[i],
@@ -387,8 +530,7 @@ class _BarChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_BarChartPainter old) =>
-      old.values != values;
+  bool shouldRepaint(_BarChartPainter old) => old.values != values;
 }
 
 // ── Line chart painter ────────────────────────────────────────────────────────
@@ -408,9 +550,9 @@ class _LineChartPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const legendH = 24.0;
-    const xLabelH = 20.0;
-    const axisW = 34.0;
+    const legendH  = 24.0;
+    const xLabelH  = 20.0;
+    const axisW    = 34.0;
     const gridLines = 4;
 
     final chartH = size.height - legendH - xLabelH;
@@ -419,8 +561,7 @@ class _LineChartPainter extends CustomPainter {
     final gridPaint = Paint()
       ..color = Colors.white10
       ..strokeWidth = 1;
-    final axisTextStyle =
-        const TextStyle(color: Colors.white38, fontSize: 10);
+    const axisTextStyle = TextStyle(color: Colors.white38, fontSize: 10);
 
     // Grid lines + Y labels (0–100%)
     for (int i = 0; i <= gridLines; i++) {
@@ -514,7 +655,6 @@ class _ArcPainter extends CustomPainter {
     const startAngle = -math.pi / 2;
     const strokeW = 8.0;
 
-    // Track
     canvas.drawCircle(
         Offset(cx, cy),
         radius,
@@ -523,7 +663,6 @@ class _ArcPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = strokeW);
 
-    // Fill
     if (value > 0) {
       canvas.drawArc(
         Rect.fromCircle(center: Offset(cx, cy), radius: radius),

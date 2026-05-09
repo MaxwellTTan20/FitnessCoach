@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'record_page.dart';
 import 'user_profile.dart';
+import 'workout_state.dart';
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,24 @@ class _WorkoutPlan {
     required this.intensity,
     required this.description,
   });
+}
+
+// Parses set strings like "4 × 8  Bench" → WorkoutGoal(exercise:'Bench', targetReps:32)
+List<WorkoutGoal> _parseGoals(List<String> sets) {
+  final result = <WorkoutGoal>[];
+  for (final s in sets) {
+    final parts = s.split('×');
+    if (parts.length < 2) continue;
+    final numSets = int.tryParse(parts[0].trim()) ?? 0;
+    final rhs = parts[1].trim().split(RegExp(r'\s+'));
+    if (rhs.length < 2) continue;
+    final numReps = int.tryParse(rhs[0]) ?? 0;
+    final exerciseName = rhs.sublist(1).join(' ');
+    if (numSets > 0 && numReps > 0 && exerciseName.isNotEmpty) {
+      result.add(WorkoutGoal(exercise: exerciseName, targetReps: numSets * numReps));
+    }
+  }
+  return result;
 }
 
 const _singles = [
@@ -176,6 +195,7 @@ class WorkoutsPage extends StatelessWidget {
                   children: _singles.asMap().entries.map((e) => _SingleCard(
                     exercise: e.value,
                     onTap: () {
+                      WorkoutState.instance.activeWorkout = null;
                       AppProfile.instance.setExercise(e.key).ignore();
                       Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const RecordPage()),
@@ -275,7 +295,20 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {},
+      onTap: () {
+        final goals = _parseGoals(plan.sets);
+        WorkoutState.instance.activeWorkout = ActiveWorkout(
+          name: plan.name,
+          goals: goals,
+        );
+        if (goals.isNotEmpty) {
+          final idx = AppProfile.exercises.indexOf(goals.first.exercise);
+          if (idx >= 0) AppProfile.instance.setExercise(idx).ignore();
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const RecordPage()),
+        );
+      },
       child: Container(
         decoration: BoxDecoration(
           color: const Color(0xFF162033),
