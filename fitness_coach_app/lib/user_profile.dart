@@ -23,6 +23,8 @@ class AppProfile {
   static const _kExperience = 'p_experience';
   static const _kHasLaunched = 'has_launched';
   static const _kExerciseIndex = 'p_exercise_index';
+  static const _kAuth0UserId = 'p_auth0_user_id';
+  static const _kIsGuest = 'p_is_guest';
 
   static const List<String> experiences = [
     'Beginner',
@@ -51,6 +53,8 @@ class AppProfile {
     avatarIndex = prefs.getInt(_kAvatar) ?? 0;
     experience = prefs.getString(_kExperience) ?? 'Beginner';
     selectedExerciseIndex = prefs.getInt(_kExerciseIndex) ?? 0;
+    auth0UserId = prefs.getString(_kAuth0UserId);
+    isGuest = prefs.getBool(_kIsGuest) ?? true;
   }
 
   Future<void> setExercise(int index) async {
@@ -108,6 +112,12 @@ class AppProfile {
     await prefs.setInt(_kAvatar, avatarIndex);
     await prefs.setString(_kExperience, experience);
     await prefs.setInt(_kExerciseIndex, selectedExerciseIndex);
+    await prefs.setBool(_kIsGuest, isGuest);
+    if (auth0UserId != null) {
+      await prefs.setString(_kAuth0UserId, auth0UserId!);
+    } else {
+      await prefs.remove(_kAuth0UserId);
+    }
   }
 
   Future<void> _saveToFirestore() async {
@@ -146,5 +156,6 @@ class AppProfile {
     isGuest = true;
     auth0UserId = null;
     email = null;
+    // _kHasLaunched intentionally cleared — user must go through auth again
   }
 }

@@ -9,6 +9,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'session_summary.dart';
 import 'user_profile.dart';
@@ -62,6 +63,9 @@ class _RecordPageState extends State<RecordPage> {
     'hip_angle': 0.0,
     'state': 'standing',
   };
+  // Accumulates per-exercise counts across the whole session.
+  // Key: exercise name, Value: {correct, incorrect}
+  Map<String, Map<String, int>> _sessionExerciseStats = {};
   String _serverUrl = _kServerUrl;
   String _provider = _kProvider;
   String _anthropicKey = _kAnthropicKey;
@@ -72,14 +76,21 @@ class _RecordPageState extends State<RecordPage> {
   @override
   void initState() {
     super.initState();
-    // Allow audio to mix with other sessions (prevents camera freeze on iOS).
     AudioPlayer.global.setAudioContext(AudioContext(
       iOS: AudioContextIOS(
         category: AVAudioSessionCategory.playback,
         options: {AVAudioSessionOptions.mixWithOthers},
       ),
     ));
-    _initializeCamera().then((_) => _autoConfigureBackend());
+    _loadSavedServerUrl().then((_) => _initializeCamera()).then((_) => _autoConfigureBackend());
+  }
+
+  Future<void> _loadSavedServerUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('server_url');
+    if (saved != null && saved.isNotEmpty) {
+      setState(() => _serverUrl = saved);
+    }
   }
 
   Future<void> _initializeCamera({
@@ -122,6 +133,7 @@ class _RecordPageState extends State<RecordPage> {
       provider: _provider,
       anthropicKey: _anthropicKey,
       openaiKey: null,
+      exercise: _selectedExercise,
     );
   }
 
@@ -154,15 +166,27 @@ class _RecordPageState extends State<RecordPage> {
     _controller!.startImageStream(_handleFrame);
   }
 
+  // Merges the current live stats into _sessionExerciseStats before a switch or finish.
+  void _flushCurrentExerciseStats() {
+    final correct = (_stats['correct_count'] as num? ?? 0).toInt();
+    final incorrect = (_stats['incorrect_count'] as num? ?? 0).toInt();
+    if (correct == 0 && incorrect == 0) return;
+    final existing = _sessionExerciseStats[_selectedExercise] ??
+        {'correct': 0, 'incorrect': 0};
+    _sessionExerciseStats[_selectedExercise] = {
+      'correct': existing['correct']! + correct,
+      'incorrect': existing['incorrect']! + incorrect,
+    };
+  }
+
   void _finishSession() {
+    _flushCurrentExerciseStats();
+    final snapshot = Map<String, Map<String, int>>.from(_sessionExerciseStats);
+    _sessionExerciseStats = {};
     if (_isProcessing) _stopProcessing();
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SessionSummaryPage(
-          exercise: _selectedExercise,
-          correctCount: (_stats['correct_count'] as num).toInt(),
-          incorrectCount: (_stats['incorrect_count'] as num).toInt(),
-        ),
+        builder: (_) => SessionSummaryPage(exerciseStats: snapshot),
       ),
     );
   }
@@ -179,8 +203,6 @@ class _RecordPageState extends State<RecordPage> {
         'incorrect_count': 0,
         'current_feedback': '',
         'is_in_rep': false,
-        'knee_angle': 0.0,
-        'hip_angle': 0.0,
         'state': 'standing',
       };
     });
@@ -322,6 +344,7 @@ class _RecordPageState extends State<RecordPage> {
     String? provider,
     String? anthropicKey,
     String? openaiKey,
+    String? exercise,
   }) async {
     try {
       final response = await http
@@ -332,6 +355,7 @@ class _RecordPageState extends State<RecordPage> {
               'provider': provider,
               'anthropic_key': anthropicKey,
               'openai_key': openaiKey,
+              'exercise': exercise ?? _selectedExercise,
             }),
           )
           .timeout(const Duration(seconds: 5));
@@ -416,6 +440,8 @@ class _RecordPageState extends State<RecordPage> {
                     _anthropicKey = anthropicCtrl.text.trim();
                     _openAiKey = openAiCtrl.text.trim();
                   });
+                  SharedPreferences.getInstance()
+                      .then((p) => p.setString('server_url', url));
                   _configureBackend(
                     provider: _provider.isEmpty ? null : _provider,
                     anthropicKey: _anthropicKey.isEmpty ? null : _anthropicKey,
@@ -503,8 +529,23 @@ class _RecordPageState extends State<RecordPage> {
                       padding: const EdgeInsets.only(right: 8),
                       child: GestureDetector(
                         onTap: () {
+                          _flushCurrentExerciseStats();
                           AppProfile.instance.setExercise(i).ignore();
-                          setState(() {});
+                          setState(() {
+                            _stats = {
+                              'correct_count': 0,
+                              'incorrect_count': 0,
+                              'current_feedback': '',
+                              'is_in_rep': false,
+                              'state': 'standing',
+                            };
+                          });
+                          _configureBackend(
+                            provider: _provider,
+                            anthropicKey: _anthropicKey.isEmpty ? null : _anthropicKey,
+                            openaiKey: _openAiKey.isEmpty ? null : _openAiKey,
+                            exercise: AppProfile.exercises[i],
+                          );
                         },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
@@ -701,27 +742,7 @@ class _RecordPageState extends State<RecordPage> {
               // ── Stats row ────────────────────────────────────────────
               Row(
                 children: [
-                  _StatChip(
-                    label: 'Knee',
-                    value: (_stats['knee_angle'] as num?)?.toStringAsFixed(0) != null &&
-                            (_stats['knee_angle'] as num?) != 0
-                        ? '${(_stats['knee_angle'] as num).toStringAsFixed(0)}°'
-                        : '—',
-                  ),
-                  const SizedBox(width: 8),
-                  _StatChip(
-                    label: 'Hip',
-                    value: (_stats['hip_angle'] as num?)?.toStringAsFixed(0) != null &&
-                            (_stats['hip_angle'] as num?) != 0
-                        ? '${(_stats['hip_angle'] as num).toStringAsFixed(0)}°'
-                        : '—',
-                  ),
-                  const SizedBox(width: 8),
-                  _StatChip(
-                    label: 'State',
-                    value: (_stats['state'] as String?) ?? 'standing',
-                    highlight: (_stats['state'] as String?) == 'squatting',
-                  ),
+                  ..._buildAngleChips(),
                   if ((_stats['current_feedback'] as String?)?.isNotEmpty == true) ...[
                     const SizedBox(width: 8),
                     Expanded(
@@ -784,13 +805,49 @@ class _RecordPageState extends State<RecordPage> {
     );
   }
 
+  String _angleDisplay(String key) {
+    final val = _stats[key] as num?;
+    if (val == null || val == 0) return '—';
+    return '${val.toStringAsFixed(0)}°';
+  }
+
+  List<Widget> _buildAngleChips() {
+    final isInRep = _stats['is_in_rep'] as bool? ?? false;
+    final state = (_stats['state'] as String?) ?? '';
+    const gap = SizedBox(width: 8);
+
+    if (_selectedExercise == 'Push-up') {
+      return [
+        _StatChip(label: 'Elbow', value: _angleDisplay('elbow_angle')),
+        gap,
+        _StatChip(label: 'Body', value: _angleDisplay('body_angle')),
+        gap,
+        _StatChip(label: 'State', value: state.isEmpty ? 'up' : state, highlight: isInRep),
+      ];
+    }
+
+    // Squat (default)
+    return [
+      _StatChip(label: 'Knee', value: _angleDisplay('knee_angle')),
+      gap,
+      _StatChip(label: 'Hip', value: _angleDisplay('hip_angle')),
+      gap,
+      _StatChip(label: 'State', value: state.isEmpty ? 'standing' : state, highlight: isInRep),
+    ];
+  }
+
   Widget _buildMainDisplay() {
     // Always show annotated frame while processing (no flash between frames).
     if (_isProcessing && _annotatedImage != null) {
-      return Image.memory(
+      final annotated = Image.memory(
         _annotatedImage!,
         fit: BoxFit.cover,
         gaplessPlayback: true,
+      );
+      return Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.diagonal3Values(-1.0, 1.0, 1.0),
+        child: annotated,
       );
     }
 
@@ -927,33 +984,6 @@ class _Badge extends StatelessWidget {
   }
 }
 
-class _InfoChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _InfoChip({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white10,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: const Color(0xFF8BB8F5), size: 16),
-          const SizedBox(width: 6),
-          Text(label,
-              style: const TextStyle(color: Colors.white70, fontSize: 13)),
-        ],
-      ),
-    );
-  }
-}
 
 class _PosePainter extends CustomPainter {
   final List<Offset> poseLandmarks;

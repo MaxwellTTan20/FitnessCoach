@@ -24,11 +24,12 @@ class _AuthPageState extends State<AuthPage> {
           .webAuthentication(scheme: 'com.maxwelltan.fitnessCoachApp')
           .login(parameters: {'connection': 'google-oauth2'});
       final profile = AppProfile.instance;
-      profile.isGuest = false;
+      await profile.load();              // load cached prefs (name, avatar, etc.) first
+      profile.isGuest = false;           // then set auth data so load() doesn't overwrite it
       profile.auth0UserId = credentials.user.sub;
       profile.email = credentials.user.email;
       if (credentials.user.name != null) profile.name = credentials.user.name!;
-      await profile.load();           // local cache first
+      await profile.save();              // persist auth0UserId + isGuest to prefs
       await profile.loadFromFirestore(); // overlay with cloud data
       widget.onAuthenticated();
     } catch (e) {
