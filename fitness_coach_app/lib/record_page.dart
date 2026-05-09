@@ -15,7 +15,7 @@ import 'user_profile.dart';
 // --- Config (edit these to change behaviour) ---
 const String _kAnthropicKey = '';
 const String _kServerUrl =
-    'http://172.23.31.255:5000'; // change to your Mac's IP when on a real device
+    'http://127.0.0.1:8080'; // change to your Mac's IP when on a real device
 const String _kProvider = 'claude';
 
 const List<List<int>> _poseConnections = [
@@ -67,6 +67,7 @@ class _RecordPageState extends State<RecordPage> {
 
   bool _isProcessing = false;
   bool _frameInFlight = false;
+  Timer? _webFrameTimer;
   Uint8List? _annotatedImage;
   List<Offset> _poseLandmarks = [];
   Map<String, dynamic> _stats = {
@@ -101,7 +102,14 @@ class _RecordPageState extends State<RecordPage> {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString('server_url');
     if (saved != null && saved.isNotEmpty) {
-      setState(() => _serverUrl = saved);
+      final oldDefaultUrl =
+          saved == 'http://localhost:5000' ||
+          saved == 'http://172.23.31.255:5000';
+      final url = kIsWeb && oldDefaultUrl ? _kServerUrl : saved;
+      if (url != saved) {
+        await prefs.setString('server_url', url);
+      }
+      setState(() => _serverUrl = url);
     }
   }
 
@@ -213,14 +221,21 @@ class _RecordPageState extends State<RecordPage> {
   void _startProcessing() {
     if (_controller == null || !_controller!.value.isInitialized) return;
     if (kIsWeb) {
-      setState(
-        () => _backendStatus =
-            'Live frame analysis needs the iOS or macOS camera runtime',
-      );
+      setState(() => _isProcessing = true);
+      _startWebCaptureLoop();
       return;
     }
     setState(() => _isProcessing = true);
     _controller!.startImageStream(_handleFrame);
+  }
+
+  void _startWebCaptureLoop() {
+    _webFrameTimer?.cancel();
+    _captureWebFrame();
+    _webFrameTimer = Timer.periodic(
+      const Duration(milliseconds: 700),
+      (_) => _captureWebFrame(),
+    );
   }
 
   // Merges the current live stats into _sessionExerciseStats before a switch or finish.
@@ -250,6 +265,8 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   void _stopProcessing() {
+    _webFrameTimer?.cancel();
+    _webFrameTimer = null;
     if (!kIsWeb) {
       _controller?.stopImageStream();
     }
@@ -308,6 +325,15 @@ class _RecordPageState extends State<RecordPage> {
     return img.encodeJpg(image, quality: 60);
   }
 
+  Uint8List _resizeJpegForApi(Uint8List jpegBytes) {
+    final image = img.decodeImage(jpegBytes);
+    if (image == null) return jpegBytes;
+    final resized = image.width > 320
+        ? img.copyResize(image, width: 320)
+        : image;
+    return img.encodeJpg(resized, quality: 60);
+  }
+
   bool _didLogFormat = false;
   void _handleFrame(CameraImage cameraImage) {
     if (!_didLogFormat) {
@@ -332,6 +358,35 @@ class _RecordPageState extends State<RecordPage> {
 
       if (!mounted || !_isProcessing) return;
 
+      await _sendJpegFrame(jpegBytes);
+    } catch (_) {
+      // Network errors; keep the stream going.
+    }
+  }
+
+  Future<void> _captureWebFrame() async {
+    if (_frameInFlight || !_isProcessing || !mounted || _controller == null) {
+      return;
+    }
+    _frameInFlight = true;
+    try {
+      final file = await _controller!.takePicture();
+      final bytes = await file.readAsBytes();
+      if (!mounted || !_isProcessing) return;
+      await _sendJpegFrame(_resizeJpegForApi(bytes));
+    } catch (e) {
+      if (mounted && _isProcessing) {
+        setState(() {
+          _backendStatus = 'Frame capture failed: $e';
+        });
+      }
+    } finally {
+      if (mounted) _frameInFlight = false;
+    }
+  }
+
+  Future<void> _sendJpegFrame(Uint8List jpegBytes) async {
+    try {
       final response = await http
           .post(
             Uri.parse('$_serverUrl/process_frame'),
@@ -376,8 +431,18 @@ class _RecordPageState extends State<RecordPage> {
           debugPrint('📷 AI Feedback received: $preview');
           _speakFeedback(aiFeedback);
         }
+      } else {
+        setState(() {
+          _backendStatus = 'Frame analysis failed: ${response.statusCode}';
+        });
       }
-    } catch (_) {
+    } catch (e) {
+      if (mounted && _isProcessing) {
+        setState(() {
+          _backendStatus =
+              'Frame analysis unreachable — check backend URL and port';
+        });
+      }
       // Network errors; keep the stream going.
     }
   }
@@ -476,7 +541,7 @@ class _RecordPageState extends State<RecordPage> {
               ElevatedButton(
                 onPressed: () {
                   final url = serverCtrl.text.trim().isEmpty
-                      ? 'http://localhost:5000'
+                      ? _kServerUrl
                       : serverCtrl.text.trim();
                   setState(() {
                     _serverUrl = url;
@@ -670,7 +735,7 @@ class _RecordPageState extends State<RecordPage> {
                       fit: StackFit.expand,
                       children: [
                         _buildMainDisplay(),
-                        if (_poseLandmarks.isNotEmpty && !_isProcessing)
+                        if (_poseLandmarks.isNotEmpty)
                           Positioned.fill(
                             child: CustomPaint(
                               painter: _PosePainter(
