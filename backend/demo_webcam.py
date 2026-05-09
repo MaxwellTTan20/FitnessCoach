@@ -6,8 +6,10 @@ Usage:
     python demo_webcam.py                     # Basic test, no AI
     python demo_webcam.py --mode pro          # Pro thresholds
     python demo_webcam.py --provider claude   # With AI feedback (needs ANTHROPIC_API_KEY)
+    python demo_webcam.py --provider claude --no-voice  # AI feedback without voice
 """
 import argparse
+import subprocess
 import sys
 
 from dotenv import load_dotenv
@@ -18,9 +20,47 @@ import cv2
 from analyzer import SquatAnalyzer
 from thresholds import THRESHOLDS
 
+# --- Voice configuration (macOS `say` command) ---
+VOICE_NAME = "Samantha"
+VOICE_RATE = 200  # words per minute
+
 # Module-level storage for the most recent rep data (for overlay display)
 _last_rep_data = None
 _last_ai_feedback = None
+
+# Track the current speech subprocess for drop-stale playback
+_current_speech = None
+
+
+def speak(text: str) -> None:
+    """
+    Speak text using macOS `say` command.
+    Terminates any in-progress speech before starting new speech (drop-stale).
+    """
+    global _current_speech
+
+    try:
+        # Terminate any in-progress speech
+        if _current_speech is not None and _current_speech.poll() is None:
+            _current_speech.terminate()
+
+        # Start new speech
+        _current_speech = subprocess.Popen(
+            ["say", "-v", VOICE_NAME, "-r", str(VOICE_RATE), text],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        print(f"[Voice] Warning: Could not speak: {e}")
+
+
+def stop_speech() -> None:
+    """Stop any in-progress speech."""
+    global _current_speech
+
+    if _current_speech is not None and _current_speech.poll() is None:
+        _current_speech.terminate()
+        _current_speech = None
 
 
 def draw_text_bg(frame, text, pos, font_scale=0.5, color=(255, 255, 255), thickness=1):
@@ -122,7 +162,7 @@ def pretty_print_rep(rep_data):
     print("=" * 50)
 
 
-def create_rep_callback(ai_coach=None):
+def create_rep_callback(ai_coach=None, use_voice=False):
     """Create the on_rep_complete callback."""
     def on_rep_complete(rep_data):
         global _last_rep_data, _last_ai_feedback
@@ -135,6 +175,10 @@ def create_rep_callback(ai_coach=None):
                 feedback = ai_coach.get_feedback(rep_data)
                 print(f"[AI Coach] {feedback}")
                 _last_ai_feedback = feedback
+
+                # Speak feedback if voice is enabled
+                if use_voice:
+                    speak(feedback)
             except Exception as e:
                 print(f"[AI Coach Error] {e}")
                 _last_ai_feedback = None
@@ -162,6 +206,8 @@ def main():
                         help="AI provider for feedback (default: none)")
     parser.add_argument("--camera-index", type=int, default=0,
                         help="Camera index (default: 0)")
+    parser.add_argument("--no-voice", action="store_true",
+                        help="Disable voice feedback (default: voice enabled when AI provider is set)")
     args = parser.parse_args()
 
     width, height = parse_resolution(args.resolution)
@@ -177,6 +223,9 @@ def main():
             print(f"Warning: Could not initialize AI coach: {e}")
             print("Continuing without AI feedback...")
 
+    # Determine if voice is enabled (AI provider set and --no-voice not passed)
+    use_voice = (args.provider != "none") and (not args.no_voice)
+
     # Print startup banner
     print()
     print("=" * 55)
@@ -186,6 +235,7 @@ def main():
     print(f"  Resolution: {width}x{height}")
     print(f"  Camera:     index {args.camera_index}")
     print(f"  AI:         {args.provider}")
+    print(f"  Voice:      {'enabled' if use_voice else 'disabled'}")
     print("-" * 55)
     print("  Stand sideways to camera.")
     print("  Press 'q' or ESC to quit, 'r' to reset counters.")
@@ -208,7 +258,7 @@ def main():
         print(f"Note: Camera using {actual_w}x{actual_h} (requested {width}x{height})")
 
     # Initialize analyzer
-    callback = create_rep_callback(ai_coach)
+    callback = create_rep_callback(ai_coach, use_voice=use_voice)
     analyzer = SquatAnalyzer(mode=args.mode, on_rep_complete=callback)
     current_mode = args.mode
 
@@ -256,6 +306,7 @@ def main():
     except KeyboardInterrupt:
         print("\nInterrupted by user")
     finally:
+        stop_speech()
         cap.release()
         cv2.destroyAllWindows()
         analyzer.close()
