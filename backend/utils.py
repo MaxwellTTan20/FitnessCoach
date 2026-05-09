@@ -9,6 +9,10 @@ LANDMARKS = {
     "nose": 0,
     "left_shoulder": 11,
     "right_shoulder": 12,
+    "left_elbow": 13,
+    "right_elbow": 14,
+    "left_wrist": 15,
+    "right_wrist": 16,
     "left_hip": 23,
     "right_hip": 24,
     "left_knee": 25,
@@ -22,7 +26,7 @@ def find_angle(p1, p2, p3):
     """
     Compute the angle at p2 formed by the line segments p1-p2 and p3-p2.
     Each point is (x, y). Returns degrees in [0, 180].
-    
+
     Example: find_angle(hip, knee, ankle) gives the knee bend angle.
     """
     x1, y1 = p1
@@ -47,11 +51,10 @@ def find_offset_angle(p1, p2):
     """
     Compute the angle of the line p1->p2 relative to the vertical (y-axis).
     Used to check if the person is roughly aligned (side view offset check).
-    Returns degrees. 0 means perfectly vertical.
+    Returns degrees. 0 means perfectly vertical, 90 means horizontal.
     """
     x1, y1 = p1
     x2, y2 = p2
-    # angle relative to vertical
     return abs(math.degrees(math.atan2(x2 - x1, y2 - y1)))
 
 
