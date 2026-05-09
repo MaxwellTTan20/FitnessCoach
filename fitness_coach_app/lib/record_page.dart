@@ -978,6 +978,10 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   Widget _buildMainDisplay() {
+    if (kIsWeb) {
+      return _buildCameraPreview();
+    }
+
     // Always show annotated frame while processing (no flash between frames).
     if (_isProcessing && _annotatedImage != null) {
       final annotated = Image.memory(
@@ -992,6 +996,10 @@ class _RecordPageState extends State<RecordPage> {
       );
     }
 
+    return _buildCameraPreview();
+  }
+
+  Widget _buildCameraPreview() {
     if (_initializeControllerFuture != null) {
       return FutureBuilder<void>(
         future: _initializeControllerFuture,
