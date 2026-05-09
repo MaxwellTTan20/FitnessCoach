@@ -7,9 +7,9 @@ import 'user_profile.dart';
 
 class _SingleExercise {
   final String name;
-  final IconData icon;
+  final String imagePath;
   final Color color;
-  const _SingleExercise(this.name, this.icon, this.color);
+  const _SingleExercise(this.name, this.imagePath, this.color);
 }
 
 class _WorkoutPlan {
@@ -30,10 +30,10 @@ class _WorkoutPlan {
 }
 
 const _singles = [
-  _SingleExercise('Just Squat',    Icons.airline_seat_legroom_extra, Color(0xFF1565C0)),
-  _SingleExercise('Just Bench',    Icons.fitness_center,              Color(0xFFC62828)),
-  _SingleExercise('Just Deadlift', Icons.hardware,                    Color(0xFF37474F)),
-  _SingleExercise('Just Push-up',  Icons.sports_martial_arts,         Color(0xFF2E7D32)),
+  _SingleExercise('Just Squat',    'lib/images/icons/squats.png',   Color(0xFF1565C0)),
+  _SingleExercise('Just Bench',    'lib/images/icons/bench.png',    Color(0xFFC62828)),
+  _SingleExercise('Just Deadlift', 'lib/images/icons/deadlift.png', Color(0xFF37474F)),
+  _SingleExercise('Just Push-up',  'lib/images/icons/pushup.png',   Color(0xFF2E7D32)),
 ];
 
 const _plans = [
@@ -246,7 +246,12 @@ class _SingleCard extends StatelessWidget {
                 color: exercise.color.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(exercise.icon, color: exercise.color, size: 18),
+              child: Image.asset(
+                exercise.imagePath,
+                width: 18,
+                height: 18,
+                color: exercise.color,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(

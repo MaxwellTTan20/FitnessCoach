@@ -1,7 +1,7 @@
 import 'package:auth0_flutter/auth0_flutter.dart';
 import 'package:flutter/material.dart';
 
-import 'auth_config.dart';
+import 'config/auth_config.dart';
 import 'auth_page.dart';
 import 'user_profile.dart';
 

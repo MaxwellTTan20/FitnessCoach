@@ -1,7 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
-import 'firebase_options.dart';
+import 'config/firebase_options.dart';
 
 import 'auth_page.dart';
 import 'profile.dart';
@@ -213,10 +213,10 @@ class _HomeTab extends StatelessWidget {
                   crossAxisSpacing: 16,
                   childAspectRatio: screenWidth < 360 ? 3 / 1 : 4 / 3,
                   children: const [
-                    _WorkoutTile(title: 'Squat', description: 'Warm-up: 1x3', icon: Icons.fitness_center),
-                    _WorkoutTile(title: 'Bench', description: 'Warm-up: 1x3', icon: Icons.shield_moon),
-                    _WorkoutTile(title: 'Deadlift', description: 'Warm-up: 1x3', icon: Icons.timeline),
-                    _WorkoutTile(title: 'Push-ups', description: 'Warm-up: 1x3', icon: Icons.self_improvement),
+                    _WorkoutTile(title: 'Squat',    description: 'Warm-up: 1x3', imagePath: 'lib/images/icons/squats.png'),
+                    _WorkoutTile(title: 'Bench',    description: 'Warm-up: 1x3', imagePath: 'lib/images/icons/bench.png'),
+                    _WorkoutTile(title: 'Deadlift', description: 'Warm-up: 1x3', imagePath: 'lib/images/icons/deadlift.png'),
+                    _WorkoutTile(title: 'Push-ups', description: 'Warm-up: 1x3', imagePath: 'lib/images/icons/pushup.png'),
                   ],
                 ),
               ],
@@ -254,9 +254,9 @@ class _FeatureBadge extends StatelessWidget {
 
 class _WorkoutTile extends StatelessWidget {
   final String title;
-  final IconData icon;
+  final String imagePath;
   final String description;
-  const _WorkoutTile({required this.title, required this.description, required this.icon});
+  const _WorkoutTile({required this.title, required this.description, required this.imagePath});
 
   @override
   Widget build(BuildContext context) {
@@ -275,7 +275,12 @@ class _WorkoutTile extends StatelessWidget {
               Container(
                 decoration: BoxDecoration(color: const Color(0xFF0F4C81), borderRadius: BorderRadius.circular(12)),
                 padding: const EdgeInsets.all(8),
-                child: Icon(icon, color: Colors.white, size: 22),
+                child: Image.asset(
+                  imagePath,
+                  width: 22,
+                  height: 22,
+                  color: Colors.white,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
