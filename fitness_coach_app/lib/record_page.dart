@@ -594,7 +594,10 @@ class _RecordPageState extends State<RecordPage> {
 
   @override
   void dispose() {
-    if (_isProcessing) _controller?.stopImageStream();
+    _webFrameTimer?.cancel();
+    if (_isProcessing && !kIsWeb) {
+      _controller?.stopImageStream();
+    }
     _controller?.dispose();
     super.dispose();
   }
