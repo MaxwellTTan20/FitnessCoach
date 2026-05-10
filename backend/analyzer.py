@@ -29,6 +29,29 @@ POSE_CONNECTIONS = mp.tasks.vision.PoseLandmarksConnections.POSE_LANDMARKS
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "pose_landmarker_heavy.task")
 
 
+def _avg_angles(*angle_groups):
+    """Average only the sides where all landmark coords are valid (not at origin sentinel)."""
+    valid = [a for a in angle_groups if a is not None]
+    return sum(valid) / len(valid) if valid else 0.0
+
+
+def _side_angle(find_fn, *pts):
+    """Compute angle only if none of the points are the (0,0) occlusion sentinel."""
+    if any(p == (0, 0) for p in pts):
+        return None
+    return find_fn(*pts)
+
+
+class _LandmarkProxy:
+    """Minimal stand-in for MediaPipe NormalizedLandmark for on-device landmark data."""
+    __slots__ = ("x", "y", "z")
+
+    def __init__(self, x: float, y: float, z: float = 0.0):
+        self.x = x
+        self.y = y
+        self.z = z
+
+
 class ExerciseAnalyzer:
     """
     Base class for exercise form analyzers using MediaPipe pose estimation.
@@ -136,19 +159,45 @@ class ExerciseAnalyzer:
         ]
 
         self._draw_landmarks(frame, landmarks, w, h)
+        self._run_analysis(landmarks, w, h)
+        return frame
 
-        # Alignment check (subclass-specific)
+    def process_landmarks(self, raw_landmarks: list):
+        """
+        Process pre-computed landmarks from on-device ML Kit pose detection.
+        raw_landmarks: list of 33 dicts with normalized x, y, z (0–1 range).
+        Skips MediaPipe entirely — used when the phone does its own pose detection.
+        """
+        if not raw_landmarks or len(raw_landmarks) < 33:
+            elapsed = time.time() - self.last_detection_time
+            if elapsed > INACTIVE_THRESH:
+                self.reset()
+            self.last_pose_landmarks = []
+            return
+
+        self.last_detection_time = time.time()
+        self.last_pose_landmarks = [
+            {"x": lm.get("x", 0.0), "y": lm.get("y", 0.0), "z": lm.get("z", 0.0)}
+            for lm in raw_landmarks
+        ]
+
+        # Wrap in proxy objects so existing angle helpers work unchanged.
+        # Use W=H=1000 virtual pixels — angle functions are scale-invariant.
+        landmarks = [_LandmarkProxy(lm.get("x", 0.0), lm.get("y", 0.0), lm.get("z", 0.0))
+                     for lm in raw_landmarks]
+        self._run_analysis(landmarks, 1000, 1000)
+
+    def _run_analysis(self, landmarks, w, h):
+        """Shared alignment + angle + buffer + state-machine logic."""
+        self._update_angles(landmarks, w, h)
+
         misaligned, alignment_feedback = self._check_alignment(landmarks, w, h)
         if misaligned:
             self.feedback = alignment_feedback
-            return frame
-
-        # Angle extraction (subclass sets primary_angle, secondary_angle, _current_angles)
-        self._update_angles(landmarks, w, h)
 
         t = self.thresh
 
-        # --- Buffer logic (decoupled from state machine) ---
+        # --- Buffer logic ---
         if not self._is_buffering and self.primary_angle < self.BUFFER_START:
             self._is_buffering = True
             self._buffer_start_time = time.time()
@@ -196,14 +245,12 @@ class ExerciseAnalyzer:
                 rep_data.update(extra_data)
                 self.on_rep_complete(rep_data)
 
-        # --- Stop buffering when fully back to neutral ---
+        # --- Stop buffering when back to neutral ---
         if self._is_buffering and self._buffer_saw_active and self.primary_angle > self.BUFFER_END:
             self._is_buffering = False
             self.current_rep_buffer = []
             self._rep_frame_index = 0
             self._buffer_saw_active = False
-
-        return frame
 
     def _check_alignment(self, landmarks, w, h):
         return False, ""
@@ -257,8 +304,8 @@ class ExerciseAnalyzer:
         # Find deepest frame (minimum primary_angle)
         i_min = min(range(len(buf)), key=lambda i: buf[i]["angles"].get("primary", float("inf")))
 
-        # 5-frame window centered on i_min
-        window_size = 5
+        # 3-frame window centered on i_min (5 was too wide at low FPS, bleeding into ascent)
+        window_size = 3
         half = window_size // 2
         start = max(0, i_min - half)
         end = min(len(buf), i_min + half + 1)

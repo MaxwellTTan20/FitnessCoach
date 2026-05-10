@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from PIL import Image
+from PIL import Image  # still used for JPEG decode on inbound frame
 
 from ai_coach import AICoach
 from analyzer import SquatAnalyzer, PushupAnalyzer, DeadliftAnalyzer, BenchAnalyzer
@@ -109,26 +109,37 @@ def process_frame():
         frame = np.array(image)
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-        annotated_frame = analyzer.process_frame(frame)
-        annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-
-        _, buffer = cv2.imencode(".jpg", annotated_frame_rgb, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        annotated_b64 = base64.b64encode(buffer).decode("utf-8")
+        analyzer.process_frame(frame)
 
         ai_feedback = _pending_ai_feedback
         _pending_ai_feedback = ""
 
-        stats = analyzer.get_stats_for_api()
-
         return jsonify({
-            "annotated_image": annotated_b64,
-            "stats": stats,
+            "stats": analyzer.get_stats_for_api(),
             "landmarks": analyzer.last_pose_landmarks,
             "ai_feedback": ai_feedback,
         })
 
     except Exception as e:
         print(f"Error processing frame: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/process_landmarks", methods=["POST"])
+def process_landmarks():
+    global _pending_ai_feedback
+    try:
+        data = request.get_json()
+        raw_landmarks = data.get("landmarks", [])
+        analyzer.process_landmarks(raw_landmarks)
+        ai_feedback = _pending_ai_feedback
+        _pending_ai_feedback = ""
+        return jsonify({
+            "stats": analyzer.get_stats_for_api(),
+            "ai_feedback": ai_feedback,
+        })
+    except Exception as e:
+        print(f"Error processing landmarks: {e}")
         return jsonify({"error": str(e)}), 500
 
 

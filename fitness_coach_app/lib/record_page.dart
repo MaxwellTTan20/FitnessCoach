@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -27,44 +25,6 @@ const String _kElevenLabsVoiceId = 'VR6AewLTigWG4xSOukaG';
 const String _kServerUrl = 'http://localhost:5000'; // change to your Mac's IP when on a real device
 const String _kProvider = 'claude';
 
-// Passed to the background isolate for JPEG encoding.
-class _EncodeParams {
-  final Uint8List bytes;
-  final int width;
-  final int height;
-  final int stride;
-  final bool isFront;
-  const _EncodeParams({
-    required this.bytes,
-    required this.width,
-    required this.height,
-    required this.stride,
-    required this.isFront,
-  });
-}
-
-// Top-level so compute() can spawn it in a separate isolate.
-Uint8List _encodeFrameIsolate(_EncodeParams p) {
-  final clean = Uint8List(p.width * p.height * 4);
-  for (var y = 0; y < p.height; y++) {
-    clean.setRange(y * p.width * 4, (y + 1) * p.width * 4, p.bytes, y * p.stride);
-  }
-  var image = img.Image.fromBytes(
-    width: p.width,
-    height: p.height,
-    bytes: clean.buffer,
-    numChannels: 4,
-    order: img.ChannelOrder.bgra,
-  );
-  if (image.width > image.height) {
-    image = img.copyRotate(image, angle: -90);
-  }
-  if (p.isFront) {
-    image = img.flipHorizontal(image);
-  }
-  image = img.copyResize(image, width: 320);
-  return img.encodeJpg(image, quality: 60);
-}
 
 const List<List<int>> _poseConnections = [
   [0, 1], [1, 2], [2, 3], [3, 7],
@@ -93,10 +53,11 @@ class _RecordPageState extends State<RecordPage> {
   bool _isSpeaking = false;
 
   bool _isProcessing = false;
-  int _framesInFlight = 0;
-  static const _kMaxFramesInFlight = 2;
-  Uint8List? _annotatedImage;
-  List<Offset> _poseLandmarks = [];
+  bool _mlKitInFlight = false;
+  bool _serverInFlight = false;
+  List<Offset?> _poseLandmarks = [];
+  List<Offset?> _smoothedLandmarks = [];
+  final _landmarkStale = List.filled(33, 0);
   Map<String, dynamic> _stats = {
     'correct_count': 0,
     'incorrect_count': 0,
@@ -236,7 +197,10 @@ class _RecordPageState extends State<RecordPage> {
       await _controller?.stopImageStream();
       setState(() {
         _isProcessing = false;
-        _framesInFlight = 0;
+        _mlKitInFlight = false;
+        _serverInFlight = false;
+        _smoothedLandmarks = [];
+        _landmarkStale.fillRange(0, 33, 0);
       });
       await Future.delayed(const Duration(milliseconds: 200));
     }
@@ -290,9 +254,11 @@ class _RecordPageState extends State<RecordPage> {
     _controller?.stopImageStream();
     setState(() {
       _isProcessing = false;
-      _framesInFlight = 0;
-      _annotatedImage = null;
+      _mlKitInFlight = false;
+      _serverInFlight = false;
       _poseLandmarks = [];
+      _smoothedLandmarks = [];
+      _landmarkStale.fillRange(0, 33, 0);
       // _stats kept intentionally — Stop preserves rep counts.
       // Backend also keeps state so Start resumes where we left off.
     });
@@ -311,76 +277,134 @@ class _RecordPageState extends State<RecordPage> {
     http.post(Uri.parse('$_serverUrl/reset')).ignore();
   }
 
-  bool _didLogFormat = false;
   void _handleFrame(CameraImage cameraImage) {
-    if (!_didLogFormat) {
-      _didLogFormat = true;
-      debugPrint('📷 format=${cameraImage.format.group} '
-          'size=${cameraImage.width}x${cameraImage.height} '
-          'stride=${cameraImage.planes[0].bytesPerRow} '
-          'planes=${cameraImage.planes.length}');
-    }
-    if (_framesInFlight >= _kMaxFramesInFlight || !_isProcessing || !mounted) return;
-    _framesInFlight++;
-    _processFrame(cameraImage).whenComplete(() => _framesInFlight--);
+    if (_mlKitInFlight || !_isProcessing || !mounted) return;
+    _mlKitInFlight = true;
+    _detectPose(cameraImage).whenComplete(() => _mlKitInFlight = false);
   }
 
-  Future<void> _processFrame(CameraImage cameraImage) async {
+  Future<void> _detectPose(CameraImage cameraImage) async {
     try {
-      final plane = cameraImage.planes[0];
-      // Copy bytes before passing to isolate — camera may reuse the buffer.
-      final params = _EncodeParams(
-        bytes: Uint8List.fromList(plane.bytes),
-        width: cameraImage.width,
-        height: cameraImage.height,
-        stride: plane.bytesPerRow,
-        isFront: _currentLensDirection == CameraLensDirection.front,
-      );
-      final jpegBytes = await compute(_encodeFrameIsolate, params);
+      final jpegBytes = _cameraImageToJpeg(cameraImage);
+      if (jpegBytes.isEmpty) return;
 
-      if (!mounted || !_isProcessing) return;
+      if (!_serverInFlight && _isProcessing && mounted) {
+        _serverInFlight = true;
+        await _sendFrame(jpegBytes);
+        _serverInFlight = false;
+      }
+    } catch (e) {
+      debugPrint('[Backend] $e');
+    }
+  }
 
+  Future<void> _sendFrame(Uint8List jpegBytes) async {
+    try {
       final response = await http
           .post(
             Uri.parse('$_serverUrl/process_frame'),
-            headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+            headers: {
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true',
+            },
             body: jsonEncode({'image': base64Encode(jpegBytes)}),
           )
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 8));
 
       if (!mounted || !_isProcessing) return;
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final annotatedBytes = base64Decode(data['annotated_image'] as String);
         final newStats = data['stats'] as Map<String, dynamic>;
-        final landmarksJson = (data['landmarks'] as List<dynamic>?) ?? [];
+        final rawLandmarks = (data['landmarks'] as List<dynamic>?) ?? [];
 
-        final landmarks = landmarksJson.map<Offset>((raw) {
-          final lm = raw as Map<String, dynamic>;
-          return Offset(
-            (lm['x'] as num).toDouble(),
-            (lm['y'] as num).toDouble(),
+        final smoothed = List<Offset?>.generate(33, (i) {
+          final lm = i < rawLandmarks.length ? rawLandmarks[i] as Map<String, dynamic> : null;
+          final prev = _smoothedLandmarks.length > i ? _smoothedLandmarks[i] : null;
+          if (lm == null) {
+            _landmarkStale[i]++;
+            return _landmarkStale[i] <= 4 ? prev : null;
+          }
+
+          _landmarkStale[i] = 0;
+          final raw = Offset(
+            (lm['x'] as num).toDouble().clamp(0.0, 1.0),
+            (lm['y'] as num).toDouble().clamp(0.0, 1.0),
           );
-        }).toList();
+          if (prev == null) return raw;
+          const alpha = 0.35;
+          return Offset(prev.dx + alpha * (raw.dx - prev.dx),
+                        prev.dy + alpha * (raw.dy - prev.dy));
+        });
 
         if (mounted) {
           setState(() {
-            _annotatedImage = annotatedBytes;
             _stats = newStats;
-            _poseLandmarks = landmarks;
+            _smoothedLandmarks = smoothed;
+            _poseLandmarks = smoothed;
           });
           _checkGoals();
         }
 
         final aiFeedback = data['ai_feedback'] as String? ?? '';
-        if (aiFeedback.isNotEmpty) {
-          _speakFeedback(aiFeedback);
-        }
+        if (aiFeedback.isNotEmpty) _speakFeedback(aiFeedback);
       }
-    } catch (_) {
-      // Network errors; keep the stream going.
+    } catch (_) {}
+  }
+
+  Uint8List _cameraImageToJpeg(CameraImage image) {
+    if (image.format.group == ImageFormatGroup.bgra8888) {
+      final rawBytes = image.planes[0].bytes;
+      final converted = img.Image.fromBytes(
+        width: image.width,
+        height: image.height,
+        bytes: rawBytes.buffer,
+        order: img.ChannelOrder.bgra,
+        numChannels: 4,
+      );
+      return Uint8List.fromList(img.encodeJpg(converted, quality: 75));
     }
+
+    final converted = _yuv420ToImage(image);
+    return Uint8List.fromList(img.encodeJpg(converted, quality: 75));
+  }
+
+  img.Image _yuv420ToImage(CameraImage image) {
+    final width = image.width;
+    final height = image.height;
+    final img.Image imgImage = img.Image(width: width, height: height);
+
+    final yPlane = image.planes[0];
+    final uPlane = image.planes[1];
+    final vPlane = image.planes[2];
+    final uvRowStride = uPlane.bytesPerRow;
+    final uvPixelStride = uPlane.bytesPerPixel ?? 1;
+
+    for (int y = 0; y < height; y++) {
+      final uvRow = y >> 1;
+      for (int x = 0; x < width; x++) {
+        final uvCol = x >> 1;
+        final yIndex = y * yPlane.bytesPerRow + x;
+        final uvIndex = uvRow * uvRowStride + uvCol * uvPixelStride;
+
+        final pixelY = yPlane.bytes[yIndex];
+        final pixelU = uPlane.bytes[uvIndex];
+        final pixelV = vPlane.bytes[uvIndex];
+
+        imgImage.setPixel(x, y, _yuvToRgb(imgImage, pixelY, pixelU, pixelV));
+      }
+    }
+    return imgImage;
+  }
+
+  img.Color _yuvToRgb(img.Image image, int y, int u, int v) {
+    final yy = (y & 0xff).clamp(16, 255);
+    final uu = (u & 0xff) - 128;
+    final vv = (v & 0xff) - 128;
+    final r = (1.164 * (yy - 16) + 1.596 * vv).round().clamp(0, 255);
+    final g = (1.164 * (yy - 16) - 0.392 * uu - 0.813 * vv).round().clamp(0, 255);
+    final b = (1.164 * (yy - 16) + 2.017 * uu).round().clamp(0, 255);
+    return image.getColor(r, g, b);
   }
 
   Future<void> _speakFeedback(String text) async {
@@ -706,7 +730,7 @@ class _RecordPageState extends State<RecordPage> {
                       fit: StackFit.expand,
                       children: [
                         _buildMainDisplay(),
-                        if (_poseLandmarks.isNotEmpty && !_isProcessing)
+                        if (_poseLandmarks.isNotEmpty)
                           Positioned.fill(
                             child: CustomPaint(
                               painter: _PosePainter(
@@ -956,16 +980,6 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   Widget _buildMainDisplay() {
-    // Always show annotated frame while processing (no flash between frames).
-    if (_isProcessing && _annotatedImage != null) {
-      final annotated = Image.memory(
-        _annotatedImage!,
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
-      );
-      return annotated;
-    }
-
     if (_initializeControllerFuture != null) {
       return FutureBuilder<void>(
         future: _initializeControllerFuture,
@@ -1101,7 +1115,7 @@ class _Badge extends StatelessWidget {
 
 
 class _PosePainter extends CustomPainter {
-  final List<Offset> poseLandmarks;
+  final List<Offset?> poseLandmarks;
 
   const _PosePainter({required this.poseLandmarks});
 
@@ -1120,18 +1134,19 @@ class _PosePainter extends CustomPainter {
     for (final conn in _poseConnections) {
       final si = conn[0];
       final ei = conn[1];
-      if (si < poseLandmarks.length && ei < poseLandmarks.length) {
-        canvas.drawLine(
-          Offset(poseLandmarks[si].dx * size.width,
-              poseLandmarks[si].dy * size.height),
-          Offset(poseLandmarks[ei].dx * size.width,
-              poseLandmarks[ei].dy * size.height),
-          linePaint,
-        );
-      }
+      if (si >= poseLandmarks.length || ei >= poseLandmarks.length) continue;
+      final a = poseLandmarks[si];
+      final b = poseLandmarks[ei];
+      if (a == null || b == null) continue;
+      canvas.drawLine(
+        Offset(a.dx * size.width, a.dy * size.height),
+        Offset(b.dx * size.width, b.dy * size.height),
+        linePaint,
+      );
     }
 
     for (final lm in poseLandmarks) {
+      if (lm == null) continue;
       canvas.drawCircle(
           Offset(lm.dx * size.width, lm.dy * size.height), 5, dotPaint);
     }
