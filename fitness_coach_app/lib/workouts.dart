@@ -158,9 +158,8 @@ class WorkoutsPage extends StatelessWidget {
                       decoration: BoxDecoration(
                           color: Colors.white12,
                           borderRadius: BorderRadius.circular(14)),
-                      padding: const EdgeInsets.all(10),
-                      child: const Icon(Icons.fitness_center,
-                          color: Colors.white, size: 24),
+                      padding: const EdgeInsets.all(6),
+                      child: Image.asset('lib/images/icons/favicon.png', width: 32, height: 32),
                     ),
                   ],
                 ),

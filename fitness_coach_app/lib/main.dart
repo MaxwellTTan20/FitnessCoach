@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'firebase_options.dart';
 
 import 'auth_page.dart';
+import 'capybara_feeder.dart';
 import 'profile.dart';
 import 'record_page.dart';
 import 'stats.dart';
@@ -15,6 +16,9 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await AppProfile.instance.load();
+  if (AppProfile.instance.auth0UserId != null) {
+    await AppProfile.instance.loadFromFirestore();
+  }
   runApp(const MainApp());
 }
 
@@ -96,7 +100,7 @@ class _HomePageState extends State<HomePage> {
         splashColor: const Color(0xFF5B7FA3),
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const RecordPage()),
-        ),
+        ).then((_) => setState(() {})),
         child: const Icon(Icons.camera_alt, size: 30),
       ),
       bottomNavigationBar: BottomAppBar(
@@ -161,48 +165,13 @@ class _HomeTab extends StatelessWidget {
                     const SizedBox(width: 12),
                     Container(
                       decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(16)),
-                      padding: const EdgeInsets.all(12),
-                      child: const Icon(Icons.fitness_center, color: Colors.white, size: 28),
+                      padding: const EdgeInsets.all(8),
+                      child: Image.asset('lib/images/icons/favicon.png', width: 36, height: 36),
                     ),
                   ],
                 ),
                 const SizedBox(height: 28),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color.fromRGBO(255, 255, 255, 0.9),
-                    borderRadius: BorderRadius.circular(32),
-                    boxShadow: const [BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.12), blurRadius: 24, offset: Offset(0, 12))],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: const [
-                          Icon(Icons.bar_chart, color: Color(0xFF0F4C81), size: 28),
-                          SizedBox(width: 12),
-                          Text('Strength Focus', style: TextStyle(color: Color(0xFF0F4C81), fontSize: 20, fontWeight: FontWeight.w700)),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Aesthetically designed to keep your lifts on track. Tap the camera to record and review your form in real time.',
-                        style: TextStyle(color: Color(0xFF526A86), fontSize: 16, height: 1.5),
-                      ),
-                      const SizedBox(height: 20),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: const [
-                          _FeatureBadge(icon: Icons.sports_martial_arts, label: 'Power'),
-                          _FeatureBadge(icon: Icons.shield, label: 'Focus'),
-                          _FeatureBadge(icon: Icons.flash_on, label: 'Drive'),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+                const CapybaraCard(),
                 const SizedBox(height: 26),
                 const Text("Today's warm-up", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 14),
@@ -243,27 +212,6 @@ class _HomeTab extends StatelessWidget {
 
 
 // ── Shared widgets ────────────────────────────────────────────────────────────
-class _FeatureBadge extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  const _FeatureBadge({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(color: Colors.blueGrey.shade50, borderRadius: BorderRadius.circular(18)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18, color: const Color(0xFF0F4C81)),
-          const SizedBox(width: 8),
-          Text(label, style: const TextStyle(color: Color(0xFF2B4A68), fontWeight: FontWeight.w600)),
-        ],
-      ),
-    );
-  }
-}
 
 class _WorkoutTile extends StatelessWidget {
   final String title;

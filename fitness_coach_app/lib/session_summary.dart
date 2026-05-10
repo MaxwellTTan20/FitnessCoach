@@ -32,8 +32,23 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
   Future<void> _saveSession() async {
     final profile = AppProfile.instance;
     debugPrint('[Session] userId=${profile.auth0UserId}, total=$_total, isGuest=${profile.isGuest}');
+
+    // Award grass for everyone (guests included) based on lifetime milestones.
+    if (_totalCorrect > 0) {
+      final prevMilestone = profile.lifetimeCorrectReps ~/ 10;
+      profile.lifetimeCorrectReps += _totalCorrect;
+      final newMilestone = profile.lifetimeCorrectReps ~/ 10;
+      final grassEarned = newMilestone - prevMilestone;
+      debugPrint('[Session] lifetimeCorrectReps=${profile.lifetimeCorrectReps}, grassEarned=$grassEarned');
+      if (grassEarned > 0) {
+        profile.grassBalance += grassEarned;
+        await profile.saveCapybara();
+      }
+    }
+
+    // Firestore save — signed-in users only.
     if ((profile.auth0UserId ?? '').isEmpty || _total == 0) {
-      debugPrint('[Session] Save skipped — no userId or zero reps');
+      debugPrint('[Session] Firestore save skipped — no userId or zero reps');
       return;
     }
     try {

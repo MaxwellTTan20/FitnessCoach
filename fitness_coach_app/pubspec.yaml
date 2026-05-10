@@ -28,4 +28,16 @@ flutter:
   uses-material-design: true
   assets:
     - assets/avatars/
+    - lib/images/icons/
     - lib/images/profile_pictures/
+    - lib/images/capybaras/
+    - lib/images/capybaras/capybara_1/
+    - lib/images/capybaras/capybara_2/
+    - lib/images/capybaras/capybara_3/
+    - lib/images/capybaras/capybara_4/
+    - lib/images/capybaras/capybara_5/
+    - lib/images/capybaras/capybara_6/
+    - lib/images/capybaras/capybara_7/
+    - lib/images/capybaras/capybara_8/
+    - lib/images/capybaras/capybara_9/
+    - lib/images/capybaras/capybara_10/
