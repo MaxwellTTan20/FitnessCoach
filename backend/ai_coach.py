@@ -64,19 +64,23 @@ class AICoach:
 
     def get_feedback(self, rep_data: dict) -> str:
         """Get coaching feedback for a completed rep."""
+        user_message = self._format_rep_data(rep_data)
+        
+        if self.provider:
+            try:
+                if self.provider == "claude":
+                    return self._get_claude_feedback(user_message)
+                else:
+                    return self._get_openai_feedback(user_message)
+            except Exception as e:
+                print(f"AI Coach error: {e}")
+                
+        # Fallback to local logic if no provider or LLM fails
         live_feedback = self._get_live_feedback(rep_data)
         if live_feedback:
             return live_feedback
 
-        user_message = self._format_rep_data(rep_data)
-        try:
-            if self.provider == "claude":
-                return self._get_claude_feedback(user_message)
-            else:
-                return self._get_openai_feedback(user_message)
-        except Exception as e:
-            print(f"AI Coach error: {e}")
-            return "Good rep." if rep_data.get("is_correct") else "Fix form."
+        return "Good rep." if rep_data.get("is_correct") else "Fix form."
 
     def _get_live_feedback(self, rep_data: dict) -> str:
         if self.exercise == "pushup":

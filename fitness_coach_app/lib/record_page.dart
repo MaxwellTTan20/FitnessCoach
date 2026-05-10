@@ -472,7 +472,7 @@ class _RecordPageState extends State<RecordPage> {
           final int oldCorrect = (_stats['correct_count'] as num? ?? 0).toInt();
           final int newCorrect = (newStats['correct_count'] as num? ?? 0).toInt();
           if (newCorrect > oldCorrect) {
-            _sfxPlayer.play(AssetSource('audio/ding.aiff'));
+            _sfxPlayer.play(AssetSource('audio/ding.m4a'));
           }
 
           setState(() {
@@ -520,10 +520,8 @@ class _RecordPageState extends State<RecordPage> {
           )
           .timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
-        final dir = await getTemporaryDirectory();
-        final file = File('${dir.path}/tts_feedback.mp3');
-        await file.writeAsBytes(response.bodyBytes);
-        await _audioPlayer.play(DeviceFileSource(file.path));
+        // Use BytesSource which works on both Web and Native (avoids dart:io UnsupportedError on Web)
+        await _audioPlayer.play(BytesSource(response.bodyBytes));
       } else {
         debugPrint('[TTS] ElevenLabs ${response.statusCode}: ${response.body}');
       }
