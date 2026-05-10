@@ -30,6 +30,8 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), "pose_landmarker_heavy.task
 MAX_LOST_POSE_DURING_REP_SECONDS = 0.35
 MIN_REP_BUFFER_FRAMES = 6
 MIN_REP_DURATION_SECONDS = 0.35
+SIDE_PROFILE_HYSTERESIS = 0.08
+SIDE_PROFILE_JOINTS = ("shoulder", "hip", "knee", "ankle")
 
 
 def serialize_landmark(landmark):
@@ -40,6 +42,45 @@ def serialize_landmark(landmark):
         "visibility": float(getattr(landmark, "visibility", 0.0)),
         "presence": float(getattr(landmark, "presence", 0.0)),
     }
+
+
+def landmark_confidence(landmark):
+    visibility = float(getattr(landmark, "visibility", 1.0))
+    presence = float(getattr(landmark, "presence", 1.0))
+    return min(visibility, presence)
+
+
+def side_profile_confidence(landmarks, side):
+    return statistics.mean(
+        landmark_confidence(landmarks[LANDMARKS[f"{side}_{joint}"]])
+        for joint in SIDE_PROFILE_JOINTS
+    )
+
+
+def choose_reliable_squat_side(landmarks, previous_side=None):
+    left_confidence = side_profile_confidence(landmarks, "left")
+    right_confidence = side_profile_confidence(landmarks, "right")
+
+    if previous_side in {"left", "right"}:
+        previous_confidence = (
+            left_confidence if previous_side == "left" else right_confidence
+        )
+        other_confidence = (
+            right_confidence if previous_side == "left" else left_confidence
+        )
+        if other_confidence <= previous_confidence + SIDE_PROFILE_HYSTERESIS:
+            return previous_side
+
+    return "left" if left_confidence >= right_confidence else "right"
+
+
+def get_side_landmark_coords(landmarks, side, joint, w, h):
+    return get_landmark_coords_from_normalized(
+        landmarks,
+        LANDMARKS[f"{side}_{joint}"],
+        w,
+        h,
+    )
 
 
 class ExerciseAnalyzer:
@@ -417,6 +458,7 @@ class SquatAnalyzer(ExerciseAnalyzer):
         super().__init__(mode, on_rep_complete)
         self.knee_angle = 0.0
         self.hip_angle = 0.0
+        self._side_profile_side = None
 
     def _get_thresholds(self, mode):
         return SQUAT_THRESHOLDS[mode]
@@ -427,30 +469,23 @@ class SquatAnalyzer(ExerciseAnalyzer):
         self.hip_angle = 0.0
 
     def _check_alignment(self, landmarks, w, h):
-        l_shoulder = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_shoulder"], w, h)
-        l_hip = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_hip"], w, h)
-        offset = find_offset_angle(l_shoulder, l_hip)
+        side = self._choose_tracking_side(landmarks)
+        shoulder = get_side_landmark_coords(landmarks, side, "shoulder", w, h)
+        hip = get_side_landmark_coords(landmarks, side, "hip", w, h)
+        offset = find_offset_angle(shoulder, hip)
         if offset > OFFSET_THRESH:
             return True, f"Align to side view ({offset:.0f}°)"
         return False, ""
 
     def _update_angles(self, landmarks, w, h):
-        l_shoulder = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_shoulder"], w, h)
-        r_shoulder = get_landmark_coords_from_normalized(landmarks, LANDMARKS["right_shoulder"], w, h)
-        l_hip = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_hip"], w, h)
-        r_hip = get_landmark_coords_from_normalized(landmarks, LANDMARKS["right_hip"], w, h)
-        l_knee = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_knee"], w, h)
-        r_knee = get_landmark_coords_from_normalized(landmarks, LANDMARKS["right_knee"], w, h)
-        l_ankle = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_ankle"], w, h)
-        r_ankle = get_landmark_coords_from_normalized(landmarks, LANDMARKS["right_ankle"], w, h)
+        side = self._choose_tracking_side(landmarks)
+        shoulder = get_side_landmark_coords(landmarks, side, "shoulder", w, h)
+        hip = get_side_landmark_coords(landmarks, side, "hip", w, h)
+        knee = get_side_landmark_coords(landmarks, side, "knee", w, h)
+        ankle = get_side_landmark_coords(landmarks, side, "ankle", w, h)
 
-        l_knee_angle = find_angle(l_hip, l_knee, l_ankle)
-        r_knee_angle = find_angle(r_hip, r_knee, r_ankle)
-        knee_angle = (l_knee_angle + r_knee_angle) / 2
-
-        l_hip_angle = find_angle(l_shoulder, l_hip, l_knee)
-        r_hip_angle = find_angle(r_shoulder, r_hip, r_knee)
-        hip_angle = (l_hip_angle + r_hip_angle) / 2
+        knee_angle = find_angle(hip, knee, ankle)
+        hip_angle = find_angle(shoulder, hip, knee)
 
         self.knee_angle = knee_angle
         self.hip_angle = hip_angle
@@ -462,6 +497,13 @@ class SquatAnalyzer(ExerciseAnalyzer):
             "knee_angle": knee_angle,
             "hip_angle": hip_angle,
         }
+
+    def _choose_tracking_side(self, landmarks):
+        self._side_profile_side = choose_reliable_squat_side(
+            landmarks,
+            previous_side=self._side_profile_side,
+        )
+        return self._side_profile_side
 
     def _on_enter_active(self):
         t = self.thresh
