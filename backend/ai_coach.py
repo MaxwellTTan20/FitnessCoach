@@ -33,64 +33,20 @@ class AICoach:
             raise ValueError(f"Unknown provider: {provider}. Use 'claude' or 'openai'.")
 
     def get_feedback(self, rep_data: dict) -> str:
-        """Get coaching feedback for a completed rep."""
+        """Get coaching feedback for a completed rep exclusively from the LLM."""
+        if not self.provider:
+            return ""
+
         user_message = self._format_rep_data(rep_data)
         
-        if self.provider:
-            try:
-                if self.provider == "claude":
-                    return self._get_claude_feedback(user_message)
-                else:
-                    return self._get_openai_feedback(user_message)
-            except Exception as e:
-                print(f"AI Coach error: {e}")
-                
-        # Fallback to local logic if no provider or LLM fails
-        live_feedback = self._get_live_feedback(rep_data)
-        if live_feedback:
-            return live_feedback
-
-        return "Good rep." if rep_data.get("is_correct") else "Fix form."
-
-    def _get_live_feedback(self, rep_data: dict) -> str:
-        if self.exercise == "pushup":
-            return self._get_pushup_live_feedback(rep_data)
-        return self._get_squat_live_feedback(rep_data)
-
-    def _get_squat_live_feedback(self, rep_data: dict) -> str:
-        if rep_data.get("is_correct"):
-            return "Good rep."
-
-        tempo_status = rep_data.get("tempo", {}).get("status")
-        if tempo_status == "rushed_descent":
-            return "Slow down."
-        if tempo_status == "bounced_out":
-            return "Control the ascent."
-
-        knee_angle = rep_data.get("knee_angle", 0)
-        hip_angle = rep_data.get("hip_angle", 0)
-        if hip_angle < 50:
-            return "Chest up."
-        if hip_angle > 120:
-            return "Get lower."
-
-        return ""
-
-    def _get_pushup_live_feedback(self, rep_data: dict) -> str:
-        if rep_data.get("is_correct"):
-            return "Good rep."
-
-        tempo_status = rep_data.get("tempo", {}).get("status")
-        if tempo_status == "rushed_descent":
-            return "Control the descent."
-        if tempo_status == "bounced_out":
-            return "Don't bounce."
-
-        elbow_angle = rep_data.get("elbow_angle", 0)
-        if elbow_angle > 110:
-            return "Lower chest to floor."
-
-        return ""
+        try:
+            if self.provider == "claude":
+                return self._get_claude_feedback(user_message)
+            else:
+                return self._get_openai_feedback(user_message)
+        except Exception as e:
+            print(f"AI Coach error: {e}")
+            return ""
 
     @property
     def system_prompt(self) -> str:
@@ -144,7 +100,7 @@ Provide short, punchy coaching for this rep."""
 
     def _get_claude_feedback(self, user_message: str) -> str:
         response = self.client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
             max_tokens=100,
             system=self.system_prompt,
             messages=[{"role": "user", "content": user_message}],
@@ -153,7 +109,7 @@ Provide short, punchy coaching for this rep."""
 
     def _get_openai_feedback(self, user_message: str) -> str:
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="claude-sonnet-4-5-20251101",
             max_tokens=100,
             messages=[
                 {"role": "system", "content": self.system_prompt},
