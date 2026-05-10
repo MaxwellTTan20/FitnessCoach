@@ -1,8 +1,7 @@
-import 'package:auth0_flutter/auth0_flutter.dart';
 import 'package:flutter/material.dart';
 
-import 'auth_config.dart';
 import 'auth_page.dart';
+import 'auth_service.dart';
 import 'movement_lab_theme.dart';
 import 'user_profile.dart';
 
@@ -85,11 +84,10 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _signOut() async {
     try {
-      await Auth0(
-        kAuth0Domain,
-        kAuth0ClientId,
-      ).webAuthentication(scheme: kAuth0Scheme).logout();
-    } catch (_) {}
+      await AppAuthService.instance.signOut();
+    } catch (e) {
+      debugPrint('[Auth] Sign-out cleanup failed: $e');
+    }
     await _profile.clear();
     _nameCtrl.text = '';
     _usernameCtrl.text = '';

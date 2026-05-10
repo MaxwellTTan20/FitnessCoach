@@ -1,7 +1,7 @@
-import 'package:auth0_flutter/auth0_flutter.dart';
 import 'package:flutter/material.dart';
 
-import 'auth_config.dart';
+import 'auth_service.dart';
+import 'auth_session.dart';
 import 'movement_lab_theme.dart';
 import 'user_profile.dart';
 
@@ -14,9 +14,19 @@ class AuthPage extends StatefulWidget {
 }
 
 class _AuthPageState extends State<AuthPage> {
-  final _auth0 = Auth0(kAuth0Domain, kAuth0ClientId);
   bool _loading = false;
   String? _error;
+
+  Future<void> _applyAuthSession(AuthSession session) async {
+    final profile = AppProfile.instance;
+    await profile.load();
+    profile.isGuest = false;
+    profile.auth0UserId = session.userId;
+    profile.email = session.email;
+    if (session.name != null) profile.name = session.name!;
+    await profile.save();
+    await profile.loadFromFirestore();
+  }
 
   Future<void> _signInWithGoogle() async {
     setState(() {
@@ -24,21 +34,12 @@ class _AuthPageState extends State<AuthPage> {
       _error = null;
     });
     try {
-      final credentials = await _auth0
-          .webAuthentication(scheme: 'com.maxwelltan.fitnessCoachApp')
-          .login(parameters: {'connection': 'google-oauth2'});
-      final profile = AppProfile.instance;
-      await profile.load(); // load cached prefs (name, avatar, etc.) first
-      profile.isGuest =
-          false; // then set auth data so load() doesn't overwrite it
-      profile.auth0UserId = credentials.user.sub;
-      profile.email = credentials.user.email;
-      if (credentials.user.name != null) profile.name = credentials.user.name!;
-      await profile.save(); // persist auth0UserId + isGuest to prefs
-      await profile.loadFromFirestore(); // overlay with cloud data
+      final session = await AppAuthService.instance.signInWithGoogle();
+      await _applyAuthSession(session);
       widget.onAuthenticated();
     } catch (e) {
-      setState(() => _error = 'Sign-in failed. Please try again.');
+      debugPrint('[Auth] Sign-in failed: $e');
+      setState(() => _error = 'Sign-in failed. Check Auth0 settings.');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
