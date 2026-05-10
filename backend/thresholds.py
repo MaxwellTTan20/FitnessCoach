@@ -16,8 +16,8 @@ SQUAT_THRESHOLDS = {
     "beginner": {
         "active_angle_low": 125,    # enter squatting state
         "active_angle_high": 155,   # exit squatting state
-        "knee_angle_correct": 100,  # rep is deep enough only if deepest knee angle <= this
-        "hip_angle_low": 35,        # shoulder-hip-knee torso lean range
+        "knee_angle_correct": 115,  # rep is deep enough only if deepest knee angle <= this
+        "hip_angle_low": 25,        # shoulder-hip-knee torso lean range
         "hip_angle_high": 120,
         "min_descent_seconds": 0.5, # descent faster than this = rushed
         "min_ascent_seconds": 0.3,  # ascent faster than this = bounced

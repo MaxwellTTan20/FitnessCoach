@@ -95,16 +95,12 @@ class AICoach:
     @property
     def system_prompt(self) -> str:
         return f"""You are an elite, direct fitness coach for {self.exercise}.
-Analyze rep data and provide EXTREMELY CONCISE feedback.
-CRITICAL RULES YOU MUST FOLLOW OR YOU WILL BE PENALIZED:
-1. OUTPUT EXACTLY ONE SHORT PHRASE.
-2. ABSOLUTELY NO EXPLANATIONS. DO NOT EXPLAIN WHY.
-3. MAXIMUM 5 WORDS TOTAL.
-4. If correct, say exactly: "Perfect depth!" or "Great control!"
-5. If incorrect depth, say exactly: "Go lower!"
-6. If incorrect torso, say exactly: "Chest up!"
-7. If rushed, say exactly: "Slow down!"
-Do not add anything else."""
+Analyze the provided rep data and give punchy, personalized feedback.
+RULES:
+1. MAXIMUM 10 WORDS.
+2. NO EXPLANATIONS. Be direct.
+3. Be encouraging but corrective.
+4. Use the provided metrics (angles, tempo) to give specific advice."""
 
     def _format_rep_data(self, rep_data: dict) -> str:
         if self.exercise == "pushup":
@@ -114,31 +110,37 @@ Do not add anything else."""
     def _format_squat_rep(self, rep_data: dict) -> str:
         tempo = rep_data.get("tempo", {})
         tempo_str = f"Eccentric {tempo.get('eccentric_ms', 0)}ms, Concentric {tempo.get('concentric_ms', 0)}ms"
+        
+        knee_angle = rep_data.get("knee_angle", 180)
+        hip_angle = rep_data.get("hip_angle", 180)
+        
+        # Add hints for the LLM
+        depth_hint = "Good depth" if knee_angle <= 115 else "Shallow"
+        torso_hint = "Good torso" if 25 <= hip_angle <= 120 else "Leaning too much"
+        tempo_hint = tempo.get("status", "Good tempo")
 
         return f"""Rep #{rep_data['rep_number']} completed:
-- Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
-- Max knee flexion: {rep_data.get('knee_angle', 0):.0f} degrees
-- Min hip angle: {rep_data.get('hip_angle', 0):.0f} degrees
-- Tempo: {tempo_str}
+- Status: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
+- Knee Angle: {knee_angle:.0f}° ({depth_hint})
+- Hip Angle: {hip_angle:.0f}° ({torso_hint})
+- Tempo: {tempo_str} ({tempo_hint})
 - Mode: {rep_data['mode']}
-- Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
 
-Provide brief coaching feedback for this rep."""
+Provide short, punchy coaching for this rep."""
 
     def _format_pushup_rep(self, rep_data: dict) -> str:
         tempo = rep_data.get("tempo", {})
         tempo_str = f"Eccentric {tempo.get('eccentric_ms', 0)}ms, Concentric {tempo.get('concentric_ms', 0)}ms"
 
         return f"""Rep #{rep_data['rep_number']} completed:
-- Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
-- Elbow angle at bottom: {rep_data.get('elbow_angle', 0):.0f} degrees
-- Shoulder/glenohumeral angle: {rep_data.get('shoulder_angle', 0):.0f} degrees
-- Body alignment angle: {rep_data.get('body_angle', 0):.0f} degrees
-- Tempo: {tempo_str}
+- Status: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
+- Elbow angle at bottom: {rep_data.get('elbow_angle', 0):.0f}°
+- Shoulder angle: {rep_data.get('shoulder_angle', 0):.0f}°
+- Body alignment: {rep_data.get('body_angle', 0):.0f}°
+- Tempo: {tempo_str} ({tempo.get('status', 'Good')})
 - Mode: {rep_data['mode']}
-- Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
 
-Provide brief coaching feedback for this rep."""
+Provide short, punchy coaching for this rep."""
 
     def _get_claude_feedback(self, user_message: str) -> str:
         response = self.client.messages.create(
