@@ -86,11 +86,7 @@ class AICoach:
             raise ValueError(f"Unknown provider: {provider}. Use 'claude' or 'openai'.")
 
     def get_feedback(self, rep_data: dict) -> str:
-        """Get coaching feedback for a completed rep."""
-        live_feedback = self._get_live_feedback(rep_data)
-        if live_feedback:
-            return live_feedback
-
+        """Get coaching feedback for a completed rep, preferring the LLM."""
         user_message = self._format_rep_data(rep_data)
         try:
             if self.provider == "claude":
@@ -99,7 +95,7 @@ class AICoach:
                 return self._get_openai_feedback(user_message)
         except Exception as e:
             print(f"AI Coach error: {e}")
-            return "Good rep." if rep_data.get("is_correct") else "Fix form."
+            return self._get_live_feedback(rep_data)
 
     def _get_live_feedback(self, rep_data: dict) -> str:
         if self.exercise == "pushup":
@@ -280,7 +276,7 @@ Provide brief coaching feedback for this rep."""
 
     def _get_claude_feedback(self, user_message: str) -> str:
         response = self.client.messages.create(
-            model="claude-sonnet-4-6",
+            model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
             max_tokens=100,
             system=self.system_prompt,
             messages=[{"role": "user", "content": user_message}],

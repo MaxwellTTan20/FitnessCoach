@@ -1,7 +1,7 @@
 """
 Flask server for AI Fitness Coach.
 Receives frames from the Flutter app, processes with MediaPipe + AI coaching, returns annotated frames.
-Voice playback is handled by the backend.
+Voice playback is normally handled by the Flutter client.
 
 Setup:
     1. Copy .env.example to .env and fill in your API keys.
@@ -40,6 +40,7 @@ _pending_ai_feedback = ""
 _latest_rep_number = 0
 current_exercise = "squat"
 current_mode = "beginner"
+BACKEND_AUTO_SPEAK_ENV = "BACKEND_AUTO_SPEAK_FEEDBACK"
 
 EXERCISE_CLASSES = {
     "squat": SquatAnalyzer,
@@ -81,8 +82,13 @@ def configure_ai_coach(provider="claude", anthropic_key=None, openai_key=None, e
     ai_coach = AICoach(provider=provider, api_key=api_key, exercise=exercise)
 
 
-def configure_voice_coach():
+def configure_voice_coach(enabled=True):
     global voice_coach
+
+    if not enabled:
+        voice_coach = None
+        print("[Voice] Backend voice disabled.")
+        return
 
     use_elevenlabs = os.environ.get("USE_ELEVENLABS_VOICE", "true").lower() not in {"0", "false", "no", "off"}
     api_key = os.environ.get("ELEVENLABS_API_KEY")
@@ -142,7 +148,11 @@ def create_feedback_callback():
                         return
                     print(f"[AI Coach] {feedback}")
                     _pending_ai_feedback = feedback
-                    if voice_coach:
+                    auto_speak = os.environ.get(
+                        BACKEND_AUTO_SPEAK_ENV,
+                        "false",
+                    ).lower() in {"1", "true", "yes", "on"}
+                    if voice_coach and auto_speak:
                         voice_coach.speak(feedback)
                 else:
                     print(f"[Rep Complete] {rep_data}")
@@ -299,12 +309,17 @@ if __name__ == "__main__":
     parser.add_argument("--provider", choices=["claude", "openai"], default="claude")
     parser.add_argument("--anthropic-key", default=None)
     parser.add_argument("--openai-key", default=None)
+    parser.add_argument(
+        "--no-elevenlabs",
+        action="store_true",
+        help="Disable backend ElevenLabs voice initialization.",
+    )
     args = parser.parse_args()
 
     current_exercise = args.exercise
     current_mode = args.mode
 
-    configure_voice_coach()
+    configure_voice_coach(enabled=not args.no_elevenlabs)
     on_rep_callback = create_feedback_callback()
     analyzer = create_analyzer(args.exercise, args.mode, on_rep_callback)
 
@@ -315,7 +330,7 @@ if __name__ == "__main__":
             openai_key=args.openai_key,
             exercise=args.exercise,
         )
-        print(f"AI Coach: {args.provider} (voice handled by backend)")
+        print(f"AI Coach: {args.provider} (voice handled by Flutter client)")
     except Exception as e:
         print(f"Warning: Could not initialize AI coach: {e}")
         print("Continuing without AI coaching...")

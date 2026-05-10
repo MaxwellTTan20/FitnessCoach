@@ -1,31 +1,30 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'audio_cue.dart';
 import 'session_summary.dart';
 import 'user_profile.dart';
+import 'voice_feedback.dart';
 import 'workout_state.dart';
 
-// --- Config (edit these to change behaviour) ---
-const String _kAnthropicKey =
-    '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';
-const String _kElevenLabsKey =
-    'sk_906b72eb783432101589d45a07007c281af45967b331a44b';
-// Arnold voice ID (free tier). To change: pick another ID from backend/voice.py VOICES dict.
-const String _kElevenLabsVoiceId = 'VR6AewLTigWG4xSOukaG';
-const String _kServerUrl = 'http://localhost:5000'; // change to your Mac's IP when on a real device
-const String _kProvider = 'claude';
+const String _kAnthropicKey = String.fromEnvironment('ANTHROPIC_KEY');
+const String _kServerUrl = String.fromEnvironment(
+  'SERVER_URL',
+  defaultValue: 'http://localhost:5000',
+);
+const String _kProvider = String.fromEnvironment(
+  'AI_PROVIDER',
+  defaultValue: 'claude',
+);
 
 // Passed to the background isolate for JPEG encoding.
 class _EncodeParams {
@@ -90,6 +89,9 @@ class _RecordPageState extends State<RecordPage> {
   CameraLensDirection _currentLensDirection = CameraLensDirection.back;
   String? _errorMessage;
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final AudioPlayer _sfxPlayer = AudioPlayer();
+  final VoiceFeedbackConfig _voiceFeedbackConfig =
+      defaultVoiceFeedbackConfig;
   bool _isSpeaking = false;
 
   bool _isProcessing = false;
@@ -220,7 +222,7 @@ class _RecordPageState extends State<RecordPage> {
   Future<void> _autoConfigureBackend() async {
     await _configureBackend(
       provider: _provider,
-      anthropicKey: _anthropicKey,
+      anthropicKey: _anthropicKey.isEmpty ? null : _anthropicKey,
       openaiKey: null,
       exercise: _selectedExercise,
     );
@@ -365,6 +367,24 @@ class _RecordPageState extends State<RecordPage> {
         }).toList();
 
         if (mounted) {
+          final oldCorrectCount =
+              (_stats['correct_count'] as num? ?? 0).toInt();
+          final nextCorrectCount =
+              (newStats['correct_count'] as num? ?? 0).toInt();
+          final oldIncorrectCount =
+              (_stats['incorrect_count'] as num? ?? 0).toInt();
+          final nextIncorrectCount =
+              (newStats['incorrect_count'] as num? ?? 0).toInt();
+          final cue = selectRepAudioCue(
+            previousCorrectCount: oldCorrectCount,
+            nextCorrectCount: nextCorrectCount,
+            previousIncorrectCount: oldIncorrectCount,
+            nextIncorrectCount: nextIncorrectCount,
+          );
+          if (cue != null) {
+            unawaited(_playRepCue(cue));
+          }
+
           setState(() {
             _annotatedImage = annotatedBytes;
             _stats = newStats;
@@ -383,29 +403,32 @@ class _RecordPageState extends State<RecordPage> {
     }
   }
 
+  Future<void> _playRepCue(RepAudioCue cue) async {
+    try {
+      await _sfxPlayer.play(AssetSource(cue.assetPath));
+    } catch (e) {
+      debugPrint('[Audio Cue] Playback failed: $e');
+    }
+  }
+
   Future<void> _speakFeedback(String text) async {
     if (text.isEmpty || _isSpeaking) return;
+    if (!_voiceFeedbackConfig.isEnabled) {
+      debugPrint('[TTS] ELEVENLABS_KEY not configured; skipping speech.');
+      return;
+    }
     _isSpeaking = true;
     try {
       final response = await http
           .post(
-            Uri.parse(
-                'https://api.elevenlabs.io/v1/text-to-speech/$_kElevenLabsVoiceId'),
-            headers: {
-              'xi-api-key': _kElevenLabsKey,
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'text': text,
-              'model_id': 'eleven_turbo_v2_5',
-            }),
+            _voiceFeedbackConfig.streamingUri,
+            headers: _voiceFeedbackConfig.headers,
+            body: jsonEncode(_voiceFeedbackConfig.payloadFor(text)),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
-        final dir = await getTemporaryDirectory();
-        final file = File('${dir.path}/tts_feedback.mp3');
-        await file.writeAsBytes(response.bodyBytes);
-        await _audioPlayer.play(DeviceFileSource(file.path));
+        await _audioPlayer.setPlaybackRate(1.08);
+        await _audioPlayer.play(BytesSource(response.bodyBytes));
       } else {
         debugPrint('[TTS] ElevenLabs ${response.statusCode}: ${response.body}');
       }
@@ -565,6 +588,7 @@ class _RecordPageState extends State<RecordPage> {
     if (_isProcessing) _controller?.stopImageStream();
     _controller?.dispose();
     _audioPlayer.dispose();
+    _sfxPlayer.dispose();
     super.dispose();
   }
 
