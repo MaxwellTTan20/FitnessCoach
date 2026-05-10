@@ -17,14 +17,12 @@ import 'session_summary.dart';
 import 'user_profile.dart';
 import 'workout_state.dart';
 
-// --- Config (edit these to change behaviour) ---
-const String _kAnthropicKey =
-    'REDACTED_ANTHROPIC_KEY';
-const String _kElevenLabsKey =
-    'REDACTED_ELEVENLABS_KEY';
+// --- Config (loaded from --dart-define at build time) ---
+const String _kAnthropicKey = String.fromEnvironment('ANTHROPIC_KEY');
+const String _kElevenLabsKey = String.fromEnvironment('ELEVENLABS_KEY');
 // Arnold voice ID (free tier). To change: pick another ID from backend/voice.py VOICES dict.
-const String _kElevenLabsVoiceId = '7GEvpCKf5Nlxqwoji96A'; // Rachel (Energetic/Bright)
-const String _kServerUrl = 'http://172.23.24.211:5001'; // Mac's local IP for iPhone access
+const String _kElevenLabsVoiceId = String.fromEnvironment('ELEVENLABS_VOICE_ID', defaultValue: '7GEvpCKf5Nlxqwoji96A');
+const String _kServerUrl = String.fromEnvironment('SERVER_URL', defaultValue: 'http://127.0.0.1:5001');
 const String _kProvider = 'claude';
 const Duration _kWebCaptureInterval = Duration(milliseconds: 50);
 
