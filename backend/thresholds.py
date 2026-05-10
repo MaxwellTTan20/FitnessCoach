@@ -19,8 +19,8 @@ SQUAT_THRESHOLDS = {
         "knee_angle_correct": 90,   # rep is deep enough only if deepest knee angle <= this
         "hip_angle_low": 40,        # shoulder-hip-knee torso lean range
         "hip_angle_high": 120,
-        "min_descent_seconds": 0.5, # descent faster than this = rushed
-        "min_ascent_seconds": 0.3,  # ascent faster than this = bounced
+        "min_descent_seconds": 0.4, # descent faster than this = rushed
+        "min_ascent_seconds": 0.2,  # ascent faster than this = bounced
     },
     "pro": {
         "active_angle_low": 115,
@@ -28,8 +28,8 @@ SQUAT_THRESHOLDS = {
         "knee_angle_correct": 60,
         "hip_angle_low": 30,
         "hip_angle_high": 110,
-        "min_descent_seconds": 0.6,
-        "min_ascent_seconds": 0.3,
+        "min_descent_seconds": 0.5,
+        "min_ascent_seconds": 0.2,
     },
 }
 

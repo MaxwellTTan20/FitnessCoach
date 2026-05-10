@@ -63,6 +63,10 @@ RULES:
     def _format_rep_data(self, rep_data: dict) -> str:
         if self.exercise == "pushup":
             return self._format_pushup_rep(rep_data)
+        elif self.exercise == "deadlift":
+            return self._format_deadlift_rep(rep_data)
+        elif self.exercise == "bench":
+            return self._format_bench_rep(rep_data)
         return self._format_squat_rep(rep_data)
 
     def _format_squat_rep(self, rep_data: dict) -> str:
@@ -72,7 +76,6 @@ RULES:
         knee_angle = rep_data.get("knee_angle", 180)
         hip_angle = rep_data.get("hip_angle", 180)
         
-        # Add hints for the LLM based on tightened thresholds
         depth_hint = "Parallel Depth" if knee_angle <= 90 else ("Close to Parallel" if knee_angle <= 105 else "Shallow")
         torso_hint = "Good torso" if 40 <= hip_angle <= 120 else "Leaning too much"
         tempo_hint = tempo.get("status", "Good tempo")
@@ -103,6 +106,47 @@ Provide short, punchy coaching for this rep."""
 - Elbow angle at bottom: {elbow_angle:.0f}° ({depth_hint})
 - Shoulder angle: {shoulder_angle:.0f}° ({shoulder_hint})
 - Body alignment: {body_angle:.0f}° ({body_hint})
+- Tempo: {tempo_str} ({tempo.get('status', 'Good')})
+- Mode: {rep_data['mode']}
+
+Provide short, punchy coaching for this rep."""
+
+    def _format_deadlift_rep(self, rep_data: dict) -> str:
+        tempo = rep_data.get("tempo", {})
+        tempo_str = f"Eccentric {tempo.get('eccentric_ms', 0)}ms, Concentric {tempo.get('concentric_ms', 0)}ms"
+
+        hip_angle = rep_data.get('hip_angle', 180)
+        knee_angle = rep_data.get('knee_angle', 180)
+        
+        hip_hint = "Good hinge" if hip_angle <= 100 else "Not enough hinge"
+        knee_hint = "Good bend" if knee_angle <= 100 else "Knees too bent/squatting it"
+
+        return f"""Rep #{rep_data['rep_number']} completed:
+- Status: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
+- Hip hinge angle: {hip_angle:.0f}° ({hip_hint})
+- Knee angle: {knee_angle:.0f}° ({knee_hint})
+- Tempo: {tempo_str} ({tempo.get('status', 'Good')})
+- Mode: {rep_data['mode']}
+
+Provide short, punchy coaching for this rep."""
+
+    def _format_bench_rep(self, rep_data: dict) -> str:
+        tempo = rep_data.get("tempo", {})
+        tempo_str = f"Eccentric {tempo.get('eccentric_ms', 0)}ms, Concentric {tempo.get('concentric_ms', 0)}ms"
+
+        elbow_angle = rep_data.get('elbow_angle', 180)
+        shoulder_angle = rep_data.get('shoulder_angle', 0)
+        body_angle = rep_data.get('body_angle', 0)
+        
+        depth_hint = "Good depth" if elbow_angle <= 90 else "Shallow"
+        shoulder_hint = "Good tuck" if shoulder_angle <= 90 else "Flared elbows"
+        body_hint = "Good arch" if body_angle <= 15 else "Too much arch/lifting off"
+
+        return f"""Rep #{rep_data['rep_number']} completed:
+- Status: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
+- Elbow angle at bottom: {elbow_angle:.0f}° ({depth_hint})
+- Shoulder angle: {shoulder_angle:.0f}° ({shoulder_hint})
+- Body angle/arch: {body_angle:.0f}° ({body_hint})
 - Tempo: {tempo_str} ({tempo.get('status', 'Good')})
 - Mode: {rep_data['mode']}
 

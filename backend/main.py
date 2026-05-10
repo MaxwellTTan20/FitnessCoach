@@ -27,7 +27,7 @@ from flask_cors import CORS
 from PIL import Image
 
 from ai_coach import AICoach
-from analyzer import SquatAnalyzer, PushupAnalyzer
+from analyzer import SquatAnalyzer, PushupAnalyzer, DeadliftAnalyzer, BenchAnalyzer
 from voice import VoiceCoach
 
 app = Flask(__name__)
@@ -140,6 +140,7 @@ def create_feedback_callback():
                         return
                     print(f"[AI Coach] {feedback}")
                     _pending_ai_feedback = feedback
+
 
                 else:
                     print(f"[Rep Complete] {rep_data}")
