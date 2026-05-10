@@ -444,7 +444,7 @@ class _RecordPageState extends State<RecordPage> {
             headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
             body: jsonEncode({
               'image': base64Encode(jpegBytes),
-              'include_annotated': !kIsWeb,
+              'include_annotated': true,
             }),
           )
           .timeout(const Duration(seconds: 5));
