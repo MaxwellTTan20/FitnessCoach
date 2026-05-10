@@ -23,7 +23,7 @@ const String _kAnthropicKey =
 const String _kElevenLabsKey =
     'REDACTED_ELEVENLABS_KEY';
 // Arnold voice ID (free tier). To change: pick another ID from backend/voice.py VOICES dict.
-const String _kElevenLabsVoiceId = 'VR6AewLTigWG4xSOukaG';
+const String _kElevenLabsVoiceId = '21m00Tcm4TlvDq8ikWAM'; // Rachel (Energetic/Bright)
 const String _kServerUrl = 'http://172.23.24.211:5001'; // Mac's local IP for iPhone access
 const String _kProvider = 'claude';
 const Duration _kWebCaptureInterval = Duration(milliseconds: 50);
@@ -519,8 +519,10 @@ class _RecordPageState extends State<RecordPage> {
               'text': text,
               'model_id': 'eleven_flash_v2_5',
               'voice_settings': {
-                'stability': 0.5,
-                'similarity_boost': 0.75,
+                'stability': 0.35,
+                'similarity_boost': 0.85,
+                'style': 0.65,
+                'use_speaker_boost': True,
               },
             }),
           )
