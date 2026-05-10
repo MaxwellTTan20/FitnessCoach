@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'movement_lab_theme.dart';
 import 'session_summary.dart';
 import 'user_profile.dart';
+import 'workout_state.dart';
 
 // --- Config (edit these to change behaviour) ---
 const String _kAnthropicKey = '';
@@ -256,6 +257,7 @@ class _RecordPageState extends State<RecordPage>
     _flushCurrentExerciseStats();
     final snapshot = Map<String, Map<String, int>>.from(_sessionExerciseStats);
     _sessionExerciseStats = {};
+    WorkoutState.instance.activeWorkout = null;
     if (_isProcessing) _stopProcessing();
     Navigator.of(context).push(
       MaterialPageRoute(

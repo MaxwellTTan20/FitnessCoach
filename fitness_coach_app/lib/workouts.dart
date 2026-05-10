@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'movement_lab_theme.dart';
 import 'record_page.dart';
 import 'user_profile.dart';
+import 'workout_state.dart';
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,36 @@ class _WorkoutPlan {
     required this.intensity,
     required this.description,
   });
+}
+
+List<WorkoutGoal> _parseGoals(List<String> sets) {
+  final goals = <WorkoutGoal>[];
+  for (final set in sets) {
+    final parts = set.split('×');
+    if (parts.length < 2) continue;
+    final setCount = int.tryParse(parts[0].trim()) ?? 0;
+    final detailParts = parts[1].trim().split(RegExp(r'\s+'));
+    if (detailParts.length < 2) continue;
+    final repCount = int.tryParse(detailParts[0]) ?? 0;
+    final exercise = detailParts.sublist(1).join(' ');
+    if (setCount > 0 && repCount > 0 && exercise.isNotEmpty) {
+      goals.add(
+        WorkoutGoal(exercise: exercise, targetReps: setCount * repCount),
+      );
+    }
+  }
+  return goals;
+}
+
+int _firstTrackableExerciseIndex(List<WorkoutGoal> goals) {
+  const trackableExercises = {'Squat', 'Push-up'};
+  final target = goals
+      .map((goal) => goal.exercise)
+      .where(trackableExercises.contains)
+      .firstOrNull;
+  if (target == null) return 0;
+  final index = AppProfile.exercises.indexOf(target);
+  return index >= 0 ? index : 0;
 }
 
 const _singles = [
@@ -203,6 +234,7 @@ class WorkoutsPage extends StatelessWidget {
                         (e) => _SingleCard(
                           exercise: e.value,
                           onTap: () {
+                            WorkoutState.instance.activeWorkout = null;
                             AppProfile.instance.setExercise(e.key).ignore();
                             Navigator.of(context).push(
                               MaterialPageRoute(
@@ -311,7 +343,19 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {},
+      onTap: () {
+        final goals = _parseGoals(plan.sets);
+        WorkoutState.instance.activeWorkout = ActiveWorkout(
+          name: plan.name,
+          goals: goals,
+        );
+        AppProfile.instance
+            .setExercise(_firstTrackableExerciseIndex(goals))
+            .ignore();
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const RecordPage()));
+      },
       child: Container(
         decoration: BoxDecoration(
           color: MovementLabColors.white,

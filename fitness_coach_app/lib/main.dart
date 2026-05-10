@@ -4,17 +4,22 @@ import 'package:flutter/material.dart';
 import 'firebase_options.dart';
 
 import 'auth_page.dart';
+import 'capybara_feeder.dart';
 import 'movement_lab_theme.dart';
 import 'profile.dart';
 import 'record_page.dart';
 import 'stats.dart';
 import 'user_profile.dart';
+import 'workout_state.dart';
 import 'workouts.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await AppProfile.instance.load();
+  if (AppProfile.instance.auth0UserId != null) {
+    await AppProfile.instance.loadFromFirestore();
+  }
   runApp(const MainApp());
 }
 
@@ -86,9 +91,9 @@ class _HomePageState extends State<HomePage> {
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const RecordPage())),
+        onPressed: () => Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => const RecordPage()))
+            .then((_) => setState(() {})),
         child: const Icon(Icons.camera_alt_outlined, size: 28),
       ),
       bottomNavigationBar: BottomAppBar(
@@ -258,6 +263,8 @@ class _HomeTab extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 26),
+                const CapybaraCard(),
+                const SizedBox(height: 26),
                 const Text(
                   "Today's movement plan",
                   style: TextStyle(
@@ -267,35 +274,52 @@ class _HomeTab extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-                GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: screenWidth < 360 ? 1 : 2,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  childAspectRatio: screenWidth < 360 ? 3 / 1 : 4 / 3,
-                  children: const [
-                    _WorkoutTile(
-                      title: 'Squat',
-                      description: 'Depth and knee path',
-                      icon: Icons.airline_seat_legroom_extra,
-                    ),
-                    _WorkoutTile(
-                      title: 'Bench',
-                      description: 'Coming soon',
-                      icon: Icons.fitness_center,
-                    ),
-                    _WorkoutTile(
-                      title: 'Deadlift',
-                      description: 'Coming soon',
-                      icon: Icons.timeline,
-                    ),
-                    _WorkoutTile(
-                      title: 'Push-up',
-                      description: 'Body line and elbow angle',
-                      icon: Icons.self_improvement,
-                    ),
-                  ],
+                Builder(
+                  builder: (ctx) {
+                    void launchWarmup(String exercise, int exerciseIdx) {
+                      WorkoutState.instance.activeWorkout = ActiveWorkout(
+                        name: '$exercise Warm-up',
+                        goals: [WorkoutGoal(exercise: exercise, targetReps: 3)],
+                      );
+                      AppProfile.instance.setExercise(exerciseIdx).ignore();
+                      Navigator.of(ctx).push(
+                        MaterialPageRoute(builder: (_) => const RecordPage()),
+                      );
+                    }
+
+                    return GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: screenWidth < 360 ? 1 : 2,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      childAspectRatio: screenWidth < 360 ? 3 / 1 : 4 / 3,
+                      children: [
+                        _WorkoutTile(
+                          title: 'Squat',
+                          description: 'Warm-up: 1 x 3',
+                          icon: Icons.airline_seat_legroom_extra,
+                          onTap: () => launchWarmup('Squat', 0),
+                        ),
+                        const _WorkoutTile(
+                          title: 'Bench',
+                          description: 'Coming soon',
+                          icon: Icons.fitness_center,
+                        ),
+                        const _WorkoutTile(
+                          title: 'Deadlift',
+                          description: 'Coming soon',
+                          icon: Icons.timeline,
+                        ),
+                        _WorkoutTile(
+                          title: 'Push-up',
+                          description: 'Warm-up: 1 x 3',
+                          icon: Icons.self_improvement,
+                          onTap: () => launchWarmup('Push-up', 3),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -342,56 +366,65 @@ class _WorkoutTile extends StatelessWidget {
   final String title;
   final IconData icon;
   final String description;
+  final VoidCallback? onTap;
   const _WorkoutTile({
     required this.title,
     required this.description,
     required this.icon,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: MovementLabColors.white,
-        border: Border.all(color: MovementLabColors.lineStrong, width: 1.2),
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: MovementLabColors.tealSoft,
-                  border: Border.all(color: MovementLabColors.trackTeal),
-                ),
-                padding: const EdgeInsets.all(8),
-                child: Icon(icon, color: MovementLabColors.trackTeal, size: 22),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: MovementLabColors.ink,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: MovementLabColors.white,
+          border: Border.all(color: MovementLabColors.lineStrong, width: 1.2),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: MovementLabColors.tealSoft,
+                    border: Border.all(color: MovementLabColors.trackTeal),
                   ),
-                  overflow: TextOverflow.ellipsis,
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(
+                    icon,
+                    color: MovementLabColors.trackTeal,
+                    size: 22,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Text(
-            description,
-            style: const TextStyle(
-              color: MovementLabColors.muted,
-              fontSize: 15,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: MovementLabColors.ink,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+            const Spacer(),
+            Text(
+              description,
+              style: const TextStyle(
+                color: MovementLabColors.muted,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

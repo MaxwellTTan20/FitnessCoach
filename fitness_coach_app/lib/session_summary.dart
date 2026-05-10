@@ -69,6 +69,21 @@ class _SessionSummaryPageState extends State<SessionSummaryPage>
     debugPrint(
       '[Session] userId=${profile.auth0UserId}, total=$_total, isGuest=${profile.isGuest}',
     );
+
+    if (_totalCorrect > 0) {
+      final previousMilestone = profile.lifetimeCorrectReps ~/ 10;
+      profile.lifetimeCorrectReps += _totalCorrect;
+      final nextMilestone = profile.lifetimeCorrectReps ~/ 10;
+      final grassEarned = nextMilestone - previousMilestone;
+      debugPrint(
+        '[Session] lifetimeCorrectReps=${profile.lifetimeCorrectReps}, grassEarned=$grassEarned',
+      );
+      if (grassEarned > 0) {
+        profile.grassBalance += grassEarned;
+        await profile.saveCapybara();
+      }
+    }
+
     if ((profile.auth0UserId ?? '').isEmpty || _total == 0) {
       debugPrint('[Session] Save skipped — no userId or zero reps');
       return;
