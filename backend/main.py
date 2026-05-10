@@ -26,7 +26,7 @@ from flask_cors import CORS
 from PIL import Image
 
 from ai_coach import AICoach
-from analyzer import SquatAnalyzer, PushupAnalyzer
+from analyzer import SquatAnalyzer, PushupAnalyzer, DeadliftAnalyzer, BenchAnalyzer
 
 app = Flask(__name__)
 CORS(app)
@@ -40,6 +40,8 @@ current_mode = "beginner"
 EXERCISE_CLASSES = {
     "squat": SquatAnalyzer,
     "pushup": PushupAnalyzer,
+    "deadlift": DeadliftAnalyzer,
+    "bench": BenchAnalyzer,
 }
 
 

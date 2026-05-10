@@ -47,7 +47,8 @@ extension _PeriodExt on _Period {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 class StatsPage extends StatefulWidget {
-  const StatsPage({super.key});
+  final int refreshTrigger;
+  const StatsPage({super.key, this.refreshTrigger = 0});
 
   @override
   State<StatsPage> createState() => _StatsPageState();
@@ -70,6 +71,15 @@ class _StatsPageState extends State<StatsPage> {
   void initState() {
     super.initState();
     _loadSessions();
+  }
+
+  @override
+  void didUpdateWidget(StatsPage old) {
+    super.didUpdateWidget(old);
+    if (old.refreshTrigger != widget.refreshTrigger) {
+      setState(() => _loading = true);
+      _loadSessions();
+    }
   }
 
   // ── Data fetching ──────────────────────────────────────────────────────────

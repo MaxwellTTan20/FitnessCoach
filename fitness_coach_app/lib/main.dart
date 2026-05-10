@@ -75,6 +75,9 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
+  int _statsRefreshKey = 0;
+
+  void _onSessionFinished() => setState(() => _statsRefreshKey++);
 
   @override
   Widget build(BuildContext context) {
@@ -86,9 +89,9 @@ class _HomePageState extends State<HomePage> {
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          _HomeTab(screenWidth: screenWidth),
+          _HomeTab(screenWidth: screenWidth, onSessionFinished: _onSessionFinished),
           const WorkoutsPage(),
-          const StatsPage(),
+          StatsPage(refreshTrigger: _statsRefreshKey),
           ProfilePage(onSignOut: () => setState(() => _selectedIndex = 0)),
         ],
       ),
@@ -100,7 +103,7 @@ class _HomePageState extends State<HomePage> {
         splashColor: const Color(0xFF5B7FA3),
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const RecordPage()),
-        ).then((_) => setState(() {})),
+        ).then((_) => _onSessionFinished()),
         child: const Icon(Icons.camera_alt, size: 30),
       ),
       bottomNavigationBar: BottomAppBar(
@@ -129,7 +132,8 @@ class _HomePageState extends State<HomePage> {
 // ── Home tab content ──────────────────────────────────────────────────────────
 class _HomeTab extends StatelessWidget {
   final double screenWidth;
-  const _HomeTab({required this.screenWidth});
+  final VoidCallback? onSessionFinished;
+  const _HomeTab({required this.screenWidth, this.onSessionFinished});
 
   @override
   Widget build(BuildContext context) {
@@ -184,7 +188,7 @@ class _HomeTab extends StatelessWidget {
                     AppProfile.instance.setExercise(exerciseIdx).ignore();
                     Navigator.of(ctx).push(
                       MaterialPageRoute(builder: (_) => const RecordPage()),
-                    );
+                    ).then((_) => onSessionFinished?.call());
                   }
                   return GridView.count(
                     shrinkWrap: true,

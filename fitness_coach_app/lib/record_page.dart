@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
@@ -25,6 +26,45 @@ const String _kElevenLabsKey =
 const String _kElevenLabsVoiceId = 'VR6AewLTigWG4xSOukaG';
 const String _kServerUrl = 'http://localhost:5000'; // change to your Mac's IP when on a real device
 const String _kProvider = 'claude';
+
+// Passed to the background isolate for JPEG encoding.
+class _EncodeParams {
+  final Uint8List bytes;
+  final int width;
+  final int height;
+  final int stride;
+  final bool isFront;
+  const _EncodeParams({
+    required this.bytes,
+    required this.width,
+    required this.height,
+    required this.stride,
+    required this.isFront,
+  });
+}
+
+// Top-level so compute() can spawn it in a separate isolate.
+Uint8List _encodeFrameIsolate(_EncodeParams p) {
+  final clean = Uint8List(p.width * p.height * 4);
+  for (var y = 0; y < p.height; y++) {
+    clean.setRange(y * p.width * 4, (y + 1) * p.width * 4, p.bytes, y * p.stride);
+  }
+  var image = img.Image.fromBytes(
+    width: p.width,
+    height: p.height,
+    bytes: clean.buffer,
+    numChannels: 4,
+    order: img.ChannelOrder.bgra,
+  );
+  if (image.width > image.height) {
+    image = img.copyRotate(image, angle: -90);
+  }
+  if (p.isFront) {
+    image = img.flipHorizontal(image);
+  }
+  image = img.copyResize(image, width: 320);
+  return img.encodeJpg(image, quality: 60);
+}
 
 const List<List<int>> _poseConnections = [
   [0, 1], [1, 2], [2, 3], [3, 7],
@@ -53,7 +93,8 @@ class _RecordPageState extends State<RecordPage> {
   bool _isSpeaking = false;
 
   bool _isProcessing = false;
-  bool _frameInFlight = false;
+  int _framesInFlight = 0;
+  static const _kMaxFramesInFlight = 2;
   Uint8List? _annotatedImage;
   List<Offset> _poseLandmarks = [];
   Map<String, dynamic> _stats = {
@@ -195,7 +236,7 @@ class _RecordPageState extends State<RecordPage> {
       await _controller?.stopImageStream();
       setState(() {
         _isProcessing = false;
-        _frameInFlight = false;
+        _framesInFlight = 0;
       });
       await Future.delayed(const Duration(milliseconds: 200));
     }
@@ -249,7 +290,7 @@ class _RecordPageState extends State<RecordPage> {
     _controller?.stopImageStream();
     setState(() {
       _isProcessing = false;
-      _frameInFlight = false;
+      _framesInFlight = 0;
       _annotatedImage = null;
       _poseLandmarks = [];
       // _stats kept intentionally — Stop preserves rep counts.
@@ -270,40 +311,6 @@ class _RecordPageState extends State<RecordPage> {
     http.post(Uri.parse('$_serverUrl/reset')).ignore();
   }
 
-  Uint8List _encodeFrame(CameraImage cameraImage) {
-    final plane = cameraImage.planes[0];
-    final width = cameraImage.width;
-    final height = cameraImage.height;
-    final stride = plane.bytesPerRow;
-
-    // Always copy row-by-row into a fresh buffer.
-    // plane.bytes can be a slice of a larger ByteBuffer, so plane.bytes.buffer
-    // starts at the wrong offset and corrupts colors. This guarantees offset 0.
-    final clean = Uint8List(width * height * 4);
-    for (var y = 0; y < height; y++) {
-      clean.setRange(y * width * 4, (y + 1) * width * 4, plane.bytes, y * stride);
-    }
-
-    var image = img.Image.fromBytes(
-      width: width,
-      height: height,
-      bytes: clean.buffer,
-      numChannels: 4,
-      order: img.ChannelOrder.bgra,
-    );
-
-    // The stream delivers 480×640 (already portrait) — only rotate if landscape.
-    if (image.width > image.height) {
-      image = img.copyRotate(image, angle: -90);
-    }
-    if (_currentLensDirection == CameraLensDirection.front) {
-      image = img.flipHorizontal(image);
-    }
-
-    image = img.copyResize(image, width: 320);
-    return img.encodeJpg(image, quality: 60);
-  }
-
   bool _didLogFormat = false;
   void _handleFrame(CameraImage cameraImage) {
     if (!_didLogFormat) {
@@ -313,16 +320,23 @@ class _RecordPageState extends State<RecordPage> {
           'stride=${cameraImage.planes[0].bytesPerRow} '
           'planes=${cameraImage.planes.length}');
     }
-    if (_frameInFlight || !_isProcessing || !mounted) return;
-    _frameInFlight = true;
-    _processFrame(cameraImage).whenComplete(() {
-      if (mounted) _frameInFlight = false;
-    });
+    if (_framesInFlight >= _kMaxFramesInFlight || !_isProcessing || !mounted) return;
+    _framesInFlight++;
+    _processFrame(cameraImage).whenComplete(() => _framesInFlight--);
   }
 
   Future<void> _processFrame(CameraImage cameraImage) async {
     try {
-      final jpegBytes = _encodeFrame(cameraImage);
+      final plane = cameraImage.planes[0];
+      // Copy bytes before passing to isolate — camera may reuse the buffer.
+      final params = _EncodeParams(
+        bytes: Uint8List.fromList(plane.bytes),
+        width: cameraImage.width,
+        height: cameraImage.height,
+        stride: plane.bytesPerRow,
+        isFront: _currentLensDirection == CameraLensDirection.front,
+      );
+      final jpegBytes = await compute(_encodeFrameIsolate, params);
 
       if (!mounted || !_isProcessing) return;
 
@@ -919,7 +933,7 @@ class _RecordPageState extends State<RecordPage> {
     final state = (_stats['state'] as String?) ?? '';
     const gap = SizedBox(width: 8);
 
-    if (_selectedExercise == 'Push-up') {
+    if (_selectedExercise == 'Push-up' || _selectedExercise == 'Bench') {
       return [
         _StatChip(label: 'Elbow', value: _angleDisplay('elbow_angle')),
         gap,
@@ -929,11 +943,13 @@ class _RecordPageState extends State<RecordPage> {
       ];
     }
 
-    // Squat (default)
+    // Squat and Deadlift: show hip + knee angles
     return [
-      _StatChip(label: 'Knee', value: _angleDisplay('knee_angle')),
+      _StatChip(label: _selectedExercise == 'Deadlift' ? 'Hip' : 'Knee',
+                value: _angleDisplay(_selectedExercise == 'Deadlift' ? 'hip_angle' : 'knee_angle')),
       gap,
-      _StatChip(label: 'Hip', value: _angleDisplay('hip_angle')),
+      _StatChip(label: _selectedExercise == 'Deadlift' ? 'Knee' : 'Hip',
+                value: _angleDisplay(_selectedExercise == 'Deadlift' ? 'knee_angle' : 'hip_angle')),
       gap,
       _StatChip(label: 'State', value: state.isEmpty ? 'standing' : state, highlight: isInRep),
     ];
@@ -947,11 +963,7 @@ class _RecordPageState extends State<RecordPage> {
         fit: BoxFit.cover,
         gaplessPlayback: true,
       );
-      return Transform(
-        alignment: Alignment.center,
-        transform: Matrix4.diagonal3Values(-1.0, 1.0, 1.0),
-        child: annotated,
-      );
+      return annotated;
     }
 
     if (_initializeControllerFuture != null) {

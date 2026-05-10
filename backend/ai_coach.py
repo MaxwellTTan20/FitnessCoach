@@ -29,6 +29,29 @@ When given rep data, provide 1-2 sentences of helpful, encouraging feedback. Foc
 
 Keep responses SHORT (under 25 words) since they will be spoken aloud during exercise.
 Never use bullet points or lists. Speak naturally as a coach would.""",
+
+    "deadlift": """You are a concise fitness coach providing real-time voice feedback during deadlift exercises.
+
+When given rep data, provide 1-2 sentences of helpful, encouraging feedback. Focus on:
+- Acknowledging good form when hip hinge depth is sufficient
+- Correcting insufficient hip hinge (hip angle too high at bottom — not bending over enough)
+- Noting if the lowering phase was too fast (rushed descent)
+- Noting if the pull was jerky or uncontrolled (fast ascent)
+
+Keep responses SHORT (under 25 words) since they will be spoken aloud during exercise.
+Never use bullet points or lists. Speak naturally as a coach would.""",
+
+    "bench": """You are a concise fitness coach providing real-time voice feedback during bench press exercises.
+
+When given rep data, provide 1-2 sentences of helpful, encouraging feedback. Focus on:
+- Acknowledging good form when depth and body position are correct
+- Correcting insufficient depth (elbow angle too high — bar not lowered enough)
+- Correcting back arch / not lying flat (body alignment out of range)
+- Correcting excessive elbow flare (glenohumeral/shoulder angle out of range)
+- Noting rushed descent or bouncing the bar off the chest
+
+Keep responses SHORT (under 25 words) since they will be spoken aloud during exercise.
+Never use bullet points or lists. Speak naturally as a coach would.""",
 }
 
 
@@ -77,6 +100,10 @@ class AICoach:
     def _format_rep_data(self, rep_data: dict) -> str:
         if self.exercise == "pushup":
             return self._format_pushup_rep(rep_data)
+        if self.exercise == "deadlift":
+            return self._format_deadlift_rep(rep_data)
+        if self.exercise == "bench":
+            return self._format_bench_rep(rep_data)
         return self._format_squat_rep(rep_data)
 
     def _format_squat_rep(self, rep_data: dict) -> str:
@@ -112,6 +139,45 @@ Provide brief coaching feedback for this rep."""
 - Elbow angle at bottom: {rep_data.get('elbow_angle', 0):.0f} degrees
 - Shoulder/glenohumeral angle: {rep_data.get('shoulder_angle', 0):.0f} degrees
 - Body alignment angle: {rep_data.get('body_angle', 0):.0f} degrees
+- Tempo: {tempo_str}
+- Mode: {rep_data['mode']}
+- Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
+
+Provide brief coaching feedback for this rep."""
+
+    def _format_deadlift_rep(self, rep_data: dict) -> str:
+        tempo = rep_data.get("tempo", {})
+        descent = tempo.get("descent_seconds")
+        ascent = tempo.get("ascent_seconds")
+        tempo_status = tempo.get("status", "unknown")
+        descent_str = f"{descent:.1f}s" if descent is not None else "?"
+        ascent_str = f"{ascent:.1f}s" if ascent is not None else "?"
+        tempo_str = f"{descent_str} lower, {ascent_str} pull ({tempo_status})"
+
+        return f"""Rep #{rep_data['rep_number']} completed:
+- Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
+- Hip hinge angle at bottom: {rep_data.get('hip_angle', 0):.0f} degrees (lower = deeper hinge)
+- Knee angle at bottom: {rep_data.get('knee_angle', 0):.0f} degrees
+- Tempo: {tempo_str}
+- Mode: {rep_data['mode']}
+- Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
+
+Provide brief coaching feedback for this rep."""
+
+    def _format_bench_rep(self, rep_data: dict) -> str:
+        tempo = rep_data.get("tempo", {})
+        descent = tempo.get("descent_seconds")
+        ascent = tempo.get("ascent_seconds")
+        tempo_status = tempo.get("status", "unknown")
+        descent_str = f"{descent:.1f}s" if descent is not None else "?"
+        ascent_str = f"{ascent:.1f}s" if ascent is not None else "?"
+        tempo_str = f"{descent_str} descent, {ascent_str} press ({tempo_status})"
+
+        return f"""Rep #{rep_data['rep_number']} completed:
+- Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
+- Elbow angle at bottom: {rep_data.get('elbow_angle', 0):.0f} degrees
+- Shoulder/elbow flare angle: {rep_data.get('shoulder_angle', 0):.0f} degrees
+- Body alignment (flat on bench): {rep_data.get('body_angle', 0):.0f} degrees
 - Tempo: {tempo_str}
 - Mode: {rep_data['mode']}
 - Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
