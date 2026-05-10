@@ -24,7 +24,7 @@ const String _kElevenLabsKey =
     'sk_906b72eb783432101589d45a07007c281af45967b331a44b';
 // Arnold voice ID (free tier). To change: pick another ID from backend/voice.py VOICES dict.
 const String _kElevenLabsVoiceId = 'VR6AewLTigWG4xSOukaG';
-const String _kServerUrl = 'http://localhost:5000'; // change to your Mac's IP when on a real device
+const String _kServerUrl = 'http://172.23.24.211:5001'; // Mac's local IP for iPhone access
 const String _kProvider = 'claude';
 
 // Passed to the background isolate for JPEG encoding.
@@ -90,6 +90,7 @@ class _RecordPageState extends State<RecordPage> {
   CameraLensDirection _currentLensDirection = CameraLensDirection.back;
   String? _errorMessage;
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final AudioPlayer _sfxPlayer = AudioPlayer(); // Instant feedback player
   bool _isSpeaking = false;
 
   bool _isProcessing = false;
@@ -186,7 +187,12 @@ class _RecordPageState extends State<RecordPage> {
     CameraLensDirection direction = CameraLensDirection.back,
   }) async {
     try {
+      debugPrint('[Camera] Step 1: calling availableCameras()...');
       _cameras = await availableCameras();
+      debugPrint('[Camera] Step 2: found ${_cameras.length} cameras');
+      for (final c in _cameras) {
+        debugPrint('[Camera]   -> ${c.name} (${c.lensDirection})');
+      }
       if (_cameras.isEmpty) {
         setState(() => _errorMessage = 'No available cameras found.');
         return;
@@ -196,6 +202,7 @@ class _RecordPageState extends State<RecordPage> {
         (c) => c.lensDirection == direction,
         orElse: () => _cameras.first,
       );
+      debugPrint('[Camera] Step 3: selected "${selected.name}" (${selected.lensDirection})');
 
       await _controller?.dispose();
 
@@ -206,13 +213,17 @@ class _RecordPageState extends State<RecordPage> {
         imageFormatGroup: ImageFormatGroup.bgra8888,
       );
 
+      debugPrint('[Camera] Step 4: calling controller.initialize()...');
       _initializeControllerFuture = _controller!.initialize();
       await _initializeControllerFuture;
+      debugPrint('[Camera] Step 5: controller initialized! isInitialized=${_controller!.value.isInitialized}');
 
       if (mounted) {
         setState(() => _currentLensDirection = selected.lensDirection);
       }
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[Camera] ERROR: $e');
+      debugPrint('[Camera] STACK: $st');
       setState(() => _errorMessage = e.toString());
     }
   }
@@ -364,14 +375,21 @@ class _RecordPageState extends State<RecordPage> {
           );
         }).toList();
 
-        if (mounted) {
-          setState(() {
-            _annotatedImage = annotatedBytes;
-            _stats = newStats;
-            _poseLandmarks = landmarks;
-          });
-          _checkGoals();
-        }
+          if (mounted) {
+            // Instant Audio Cue (Ding!)
+            final int oldCorrect = (_stats['correct_count'] as num? ?? 0).toInt();
+            final int newCorrect = (newStats['correct_count'] as num? ?? 0).toInt();
+            if (newCorrect > oldCorrect) {
+              _sfxPlayer.play(AssetSource('audio/ding.aiff'));
+            }
+
+            setState(() {
+              _annotatedImage = annotatedBytes;
+              _stats = newStats;
+              _poseLandmarks = landmarks;
+            });
+            _checkGoals();
+          }
 
         final aiFeedback = data['ai_feedback'] as String? ?? '';
         if (aiFeedback.isNotEmpty) {
@@ -387,20 +405,27 @@ class _RecordPageState extends State<RecordPage> {
     if (text.isEmpty || _isSpeaking) return;
     _isSpeaking = true;
     try {
+      // Use streaming endpoint + Flash model for lowest latency (Creator tier)
       final response = await http
           .post(
             Uri.parse(
-                'https://api.elevenlabs.io/v1/text-to-speech/$_kElevenLabsVoiceId'),
+                'https://api.elevenlabs.io/v1/text-to-speech/$_kElevenLabsVoiceId/stream'
+                '?optimize_streaming_latency=4'
+                '&output_format=mp3_22050_32'),
             headers: {
               'xi-api-key': _kElevenLabsKey,
               'Content-Type': 'application/json',
             },
             body: jsonEncode({
               'text': text,
-              'model_id': 'eleven_turbo_v2_5',
+              'model_id': 'eleven_flash_v2_5',
+              'voice_settings': {
+                'stability': 0.5,
+                'similarity_boost': 0.75,
+              },
             }),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
         final dir = await getTemporaryDirectory();
         final file = File('${dir.path}/tts_feedback.mp3');
@@ -565,6 +590,7 @@ class _RecordPageState extends State<RecordPage> {
     if (_isProcessing) _controller?.stopImageStream();
     _controller?.dispose();
     _audioPlayer.dispose();
+    _sfxPlayer.dispose();
     super.dispose();
   }
 
