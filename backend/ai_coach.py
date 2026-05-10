@@ -3,56 +3,78 @@ AI Coach - unified interface for Claude and OpenAI coaching feedback.
 Exercise-specific system prompts and rep data formatting.
 """
 import os
+import re
 from typing import Literal
+
+MAX_SPOKEN_FEEDBACK_SENTENCES = 2
+MAX_SPOKEN_FEEDBACK_WORDS = 18
 
 EXERCISE_SYSTEM_PROMPTS = {
     "squat": """You are a concise fitness coach providing real-time voice feedback during squat exercises.
 
-When given rep data, provide 1-2 sentences of helpful, encouraging feedback. Focus on:
+When given rep data, provide 1-2 short sentences of helpful, encouraging feedback. Focus on:
 - Acknowledging good form when depth and torso position are correct
 - Correcting shallow depth (knee angle too high at bottom)
 - Correcting excessive forward lean (hip angle out of range)
 - Noting rushed descent if under 0.5 seconds
 - Noting bouncing out of the bottom if ascent is under 0.3 seconds
 
-Keep responses SHORT (under 25 words) since they will be spoken aloud during exercise.
+Keep responses SHORT (under 18 words total) since they will be spoken aloud during exercise.
 Never use bullet points or lists. Speak naturally as a coach would.""",
 
     "pushup": """You are a concise fitness coach providing real-time voice feedback during push-up exercises.
 
-When given rep data, provide 1-2 sentences of helpful, encouraging feedback. Focus on:
+When given rep data, provide 1-2 short sentences of helpful, encouraging feedback. Focus on:
 - Acknowledging good form when depth and body alignment are correct
 - Correcting insufficient depth (elbow angle too high at bottom)
 - Correcting hip sag or piking (body alignment angle out of range)
 - Correcting elbow flare (glenohumeral/shoulder angle out of range)
 - Noting rushed descent or bouncing out of the bottom
 
-Keep responses SHORT (under 25 words) since they will be spoken aloud during exercise.
+Keep responses SHORT (under 18 words total) since they will be spoken aloud during exercise.
 Never use bullet points or lists. Speak naturally as a coach would.""",
 
     "deadlift": """You are a concise fitness coach providing real-time voice feedback during deadlift exercises.
 
-When given rep data, provide 1-2 sentences of helpful, encouraging feedback. Focus on:
+When given rep data, provide 1-2 short sentences of helpful, encouraging feedback. Focus on:
 - Acknowledging good form when hip hinge depth is sufficient
 - Correcting insufficient hip hinge (hip angle too high at bottom — not bending over enough)
 - Noting if the lowering phase was too fast (rushed descent)
 - Noting if the pull was jerky or uncontrolled (fast ascent)
 
-Keep responses SHORT (under 25 words) since they will be spoken aloud during exercise.
+Keep responses SHORT (under 18 words total) since they will be spoken aloud during exercise.
 Never use bullet points or lists. Speak naturally as a coach would.""",
 
     "bench": """You are a concise fitness coach providing real-time voice feedback during bench press exercises.
 
-When given rep data, provide 1-2 sentences of helpful, encouraging feedback. Focus on:
+When given rep data, provide 1-2 short sentences of helpful, encouraging feedback. Focus on:
 - Acknowledging good form when depth and body position are correct
 - Correcting insufficient depth (elbow angle too high — bar not lowered enough)
 - Correcting back arch / not lying flat (body alignment out of range)
 - Correcting excessive elbow flare (glenohumeral/shoulder angle out of range)
 - Noting rushed descent or bouncing the bar off the chest
 
-Keep responses SHORT (under 25 words) since they will be spoken aloud during exercise.
+Keep responses SHORT (under 18 words total) since they will be spoken aloud during exercise.
 Never use bullet points or lists. Speak naturally as a coach would.""",
 }
+
+
+def prune_spoken_feedback(text: str) -> str:
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return normalized
+
+    sentences = [
+        sentence.strip(" -•")
+        for sentence in re.findall(r"[^.!?]+[.!?]?", normalized)
+        if sentence.strip(" -•")
+    ]
+    shortened = " ".join(sentences[:MAX_SPOKEN_FEEDBACK_SENTENCES])
+    words = shortened.split()
+    if len(words) <= MAX_SPOKEN_FEEDBACK_WORDS:
+        return shortened
+
+    return " ".join(words[:MAX_SPOKEN_FEEDBACK_WORDS]).rstrip(".,;:!?") + "."
 
 
 class AICoach:
@@ -90,12 +112,12 @@ class AICoach:
         user_message = self._format_rep_data(rep_data)
         try:
             if self.provider == "claude":
-                return self._get_claude_feedback(user_message)
+                return prune_spoken_feedback(self._get_claude_feedback(user_message))
             else:
-                return self._get_openai_feedback(user_message)
+                return prune_spoken_feedback(self._get_openai_feedback(user_message))
         except Exception as e:
             print(f"AI Coach error: {e}")
-            return self._get_live_feedback(rep_data)
+            return prune_spoken_feedback(self._get_live_feedback(rep_data))
 
     def _get_live_feedback(self, rep_data: dict) -> str:
         if self.exercise == "pushup":
@@ -277,7 +299,7 @@ Provide brief coaching feedback for this rep."""
     def _get_claude_feedback(self, user_message: str) -> str:
         response = self.client.messages.create(
             model=os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
-            max_tokens=100,
+            max_tokens=60,
             system=self.system_prompt,
             messages=[{"role": "user", "content": user_message}],
         )
@@ -286,7 +308,7 @@ Provide brief coaching feedback for this rep."""
     def _get_openai_feedback(self, user_message: str) -> str:
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
-            max_tokens=100,
+            max_tokens=60,
             messages=[
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": user_message},
