@@ -19,9 +19,9 @@ import 'workout_state.dart';
 
 // --- Config (edit these to change behaviour) ---
 const String _kAnthropicKey =
-    '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';
+    'REDACTED_ANTHROPIC_KEY';
 const String _kElevenLabsKey =
-    'sk_906b72eb783432101589d45a07007c281af45967b331a44b';
+    'REDACTED_ELEVENLABS_KEY';
 // Arnold voice ID (free tier). To change: pick another ID from backend/voice.py VOICES dict.
 const String _kElevenLabsVoiceId = 'VR6AewLTigWG4xSOukaG';
 const String _kServerUrl = 'http://172.23.24.211:5001'; // Mac's local IP for iPhone access
