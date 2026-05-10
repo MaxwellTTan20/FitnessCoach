@@ -98,7 +98,7 @@ def configure_voice_coach():
 
     use_elevenlabs = os.environ.get("USE_ELEVENLABS_VOICE", "true").lower() not in {"0", "false", "no", "off"}
     api_key = os.environ.get("ELEVENLABS_API_KEY")
-    voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "arnold")
+    voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "josh")
     model_id = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_flash_v2_5")
 
     if not use_elevenlabs:
@@ -193,8 +193,7 @@ def process_frame():
 
         annotated_b64 = None
         if include_annotated:
-            annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-            _, buffer = cv2.imencode(".jpg", annotated_frame_rgb, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            _, buffer = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
             annotated_b64 = base64.b64encode(buffer).decode("utf-8")
 
         ai_feedback = _pending_ai_feedback
