@@ -522,7 +522,7 @@ class _RecordPageState extends State<RecordPage> {
                 'stability': 0.35,
                 'similarity_boost': 0.85,
                 'style': 0.65,
-                'use_speaker_boost': True,
+                'use_speaker_boost': true,
               },
             }),
           )
