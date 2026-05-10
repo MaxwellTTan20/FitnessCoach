@@ -1,5 +1,7 @@
-import time
 import os
+os.environ.setdefault('GLOG_minloglevel', '3')
+
+import time
 import statistics
 import cv2
 import mediapipe as mp
@@ -183,12 +185,18 @@ class ExerciseAnalyzer:
             self.state = self.ACTIVE_STATE
             self._buffer_saw_active = True
             self.feedback = self._on_enter_active()
+            print(f"[{self.__class__.__name__}] → {self.ACTIVE_STATE} (angle={self.primary_angle:.0f}°)", flush=True)
 
         elif self.state == self.ACTIVE_STATE and self.primary_angle > t["active_angle_high"]:
             self.state = self.NEUTRAL_STATE
 
             rep_analysis = self._analyze_rep()
             if not self._is_valid_completed_rep(rep_analysis):
+                print(
+                    f"[{self.__class__.__name__}] Rep discarded: "
+                    f"frames={rep_analysis['frame_count']} duration={rep_analysis['duration_seconds']:.2f}s",
+                    flush=True,
+                )
                 self.feedback = "Keep tracking"
                 self._discard_current_rep()
                 return frame
@@ -515,6 +523,10 @@ class PushupAnalyzer(ExerciseAnalyzer):
     ACTIVE_STATE = "down"
     BUFFER_START = BUFFER_PUSHUP_START
     BUFFER_END = BUFFER_PUSHUP_END
+    # Flutter rotates landscape camera frames -90°, which makes a horizontal push-up body
+    # appear vertical. The alignment check then incorrectly rejects every frame.
+    # Angles (elbow, body, etc.) are rotation-invariant so rep counting is still correct.
+    DISCARD_ON_MISALIGNMENT = False
 
     def __init__(self, mode="beginner", on_rep_complete=None):
         super().__init__(mode, on_rep_complete)
@@ -760,6 +772,7 @@ class BenchAnalyzer(ExerciseAnalyzer):
     ACTIVE_STATE = "down"
     BUFFER_START = BUFFER_BENCH_START
     BUFFER_END = BUFFER_BENCH_END
+    DISCARD_ON_MISALIGNMENT = False  # same rotation issue as PushupAnalyzer
 
     def __init__(self, mode="beginner", on_rep_complete=None):
         super().__init__(mode, on_rep_complete)

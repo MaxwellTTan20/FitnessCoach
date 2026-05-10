@@ -17,6 +17,9 @@ import socket
 import threading
 import time
 
+# Suppress MediaPipe's C++ telemetry (clearcut uploader) noise before any mp import.
+os.environ.setdefault('GLOG_minloglevel', '3')
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -40,6 +43,9 @@ _pending_ai_feedback = ""
 _latest_rep_number = 0
 current_exercise = "squat"
 current_mode = "beginner"
+# MediaPipe VIDEO mode requires strictly increasing timestamps — not thread-safe.
+# This lock serialises all calls to analyzer.process_frame().
+_analyzer_lock = threading.Lock()
 
 EXERCISE_CLASSES = {
     "squat": SquatAnalyzer,
@@ -164,17 +170,15 @@ def process_frame():
             return jsonify({"error": "No image provided"}), 400
         include_annotated = data.get("include_annotated", True)
 
-        decode_started_at = time.perf_counter()
         image_data = base64.b64decode(data["image"])
         image = Image.open(io.BytesIO(image_data))
         frame = np.array(image)
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         frame_height, frame_width = frame.shape[:2]
 
-        analysis_started_at = time.perf_counter()
-        annotated_frame = analyzer.process_frame(frame)
+        with _analyzer_lock:
+            annotated_frame = analyzer.process_frame(frame)
 
-        encode_started_at = time.perf_counter()
         annotated_b64 = None
         if include_annotated:
             annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
@@ -186,14 +190,13 @@ def process_frame():
 
         stats = analyzer.get_stats_for_api()
         total_ms = int((time.perf_counter() - request_started_at) * 1000)
+        angle_str = f" angle={analyzer.primary_angle:.0f}° state={analyzer.state}" if analyzer.last_pose_landmarks else ""
         print(
             "[Frame] "
             f"total={total_ms}ms "
-            f"decode={int((analysis_started_at - decode_started_at) * 1000)}ms "
-            f"analyze={int((encode_started_at - analysis_started_at) * 1000)}ms "
-            f"encode={int((time.perf_counter() - encode_started_at) * 1000)}ms "
             f"size={frame_width}x{frame_height} "
-            f"landmarks={len(analyzer.last_pose_landmarks)}",
+            f"landmarks={len(analyzer.last_pose_landmarks)}"
+            f"{angle_str}",
             flush=True,
         )
 

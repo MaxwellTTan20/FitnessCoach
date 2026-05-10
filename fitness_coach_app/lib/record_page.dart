@@ -11,6 +11,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'session_summary.dart';
@@ -21,7 +22,7 @@ import 'workout_state.dart';
 const String _kAnthropicKey =
     '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';
 const String _kElevenLabsKey =
-    'sk_906b72eb783432101589d45a07007c281af45967b331a44b';
+    'sk_049392789c7fb2a3f1399f24fd5771768a215abb350ea00f';
 // Arnold voice ID (free tier). To change: pick another ID from backend/voice.py VOICES dict.
 const String _kElevenLabsVoiceId = 'VR6AewLTigWG4xSOukaG';
 const String _kServerUrl = 'http://localhost:5000'; // change to your Mac's IP when on a real device
@@ -90,11 +91,14 @@ class _RecordPageState extends State<RecordPage> {
   CameraLensDirection _currentLensDirection = CameraLensDirection.back;
   String? _errorMessage;
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final FlutterTts _flutterTts = FlutterTts();
   bool _isSpeaking = false;
 
   bool _isProcessing = false;
   int _framesInFlight = 0;
-  static const _kMaxFramesInFlight = 2;
+  static const _kMaxFramesInFlight = 1;
+  int _consecutiveFrameErrors = 0;
+  static const _kErrorThreshold = 5;
   Uint8List? _annotatedImage;
   List<Offset> _poseLandmarks = [];
   Map<String, dynamic> _stats = {
@@ -130,6 +134,8 @@ class _RecordPageState extends State<RecordPage> {
         options: {AVAudioSessionOptions.mixWithOthers},
       ),
     ));
+    _flutterTts.setSpeechRate(0.5);
+    _flutterTts.setVolume(1.0);
     _activeWorkout = WorkoutState.instance.activeWorkout;
     _loadSavedServerUrl().then((_) => _initializeCamera()).then((_) => _autoConfigureBackend());
   }
@@ -308,7 +314,7 @@ class _RecordPageState extends State<RecordPage> {
         'state': 'standing',
       };
     });
-    http.post(Uri.parse('$_serverUrl/reset')).ignore();
+    http.post(Uri.parse('$_serverUrl/reset'), headers: {'ngrok-skip-browser-warning': 'true'}).ignore();
   }
 
   bool _didLogFormat = false;
@@ -366,6 +372,7 @@ class _RecordPageState extends State<RecordPage> {
 
         if (mounted) {
           setState(() {
+            _consecutiveFrameErrors = 0;
             _annotatedImage = annotatedBytes;
             _stats = newStats;
             _poseLandmarks = landmarks;
@@ -374,48 +381,53 @@ class _RecordPageState extends State<RecordPage> {
         }
 
         final aiFeedback = data['ai_feedback'] as String? ?? '';
-        if (aiFeedback.isNotEmpty) {
-          _speakFeedback(aiFeedback);
-        }
+        if (aiFeedback.isNotEmpty) _speakFeedback(aiFeedback);
       }
     } catch (_) {
-      // Network errors; keep the stream going.
+      _consecutiveFrameErrors++;
+      if (_consecutiveFrameErrors >= _kErrorThreshold && mounted) {
+        setState(() => _backendStatus = 'Backend unreachable — check ngrok URL or restart tunnel');
+      }
     }
   }
 
   Future<void> _speakFeedback(String text) async {
-    if (text.isEmpty || _isSpeaking) return;
-    _isSpeaking = true;
-    try {
-      final response = await http
-          .post(
-            Uri.parse(
-                'https://api.elevenlabs.io/v1/text-to-speech/$_kElevenLabsVoiceId'),
-            headers: {
-              'xi-api-key': _kElevenLabsKey,
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'text': text,
-              'model_id': 'eleven_turbo_v2_5',
-            }),
-          )
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final dir = await getTemporaryDirectory();
-        final file = File('${dir.path}/tts_feedback.mp3');
-        await file.writeAsBytes(response.bodyBytes);
-        await _audioPlayer.play(DeviceFileSource(file.path));
-      } else {
-        debugPrint('[TTS] ElevenLabs ${response.statusCode}: ${response.body}');
-      }
-    } catch (e) {
-      debugPrint('[TTS] Error: $e');
-    } finally {
-      _isSpeaking = false;
-    }
-  }
+  if (text.isEmpty || _isSpeaking) return;
+  _isSpeaking = true;
+  try {
+    final response = await http.post(
+      Uri.parse('https://api.elevenlabs.io/v1/text-to-speech/$_kElevenLabsVoiceId'),
+      headers: {
+        'xi-api-key': _kElevenLabsKey,
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'text': text,
+        'model_id': 'eleven_turbo_v2_5',
+      }),
+    ).timeout(const Duration(seconds: 10));
 
+    if (response.statusCode == 200) {
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/tts_feedback.mp3');
+      await file.writeAsBytes(response.bodyBytes);
+
+      // Wait for playback to fully complete before allowing next feedback
+      final completer = Completer<void>();
+      _audioPlayer.onPlayerComplete.first.then((_) => completer.complete());
+      await _audioPlayer.play(DeviceFileSource(file.path));
+      await completer.future;
+    } else {
+      debugPrint('[TTS] ElevenLabs ${response.statusCode}: ${response.body}');
+      await _flutterTts.speak(text);
+    }
+  } catch (e) {
+    debugPrint('[TTS] Error: $e');
+    try { await _flutterTts.speak(text); } catch (_) {}
+  } finally {
+    _isSpeaking = false;
+  }
+}
   Future<void> _configureBackend({
     String? provider,
     String? anthropicKey,
@@ -441,6 +453,7 @@ class _RecordPageState extends State<RecordPage> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         setState(() {
+          _consecutiveFrameErrors = 0;
           _backendStatus = data['provider'] != null
               ? 'AI: ${data['provider']} + ElevenLabs (phone)'
               : 'Backend connected (no AI provider)';
@@ -565,6 +578,7 @@ class _RecordPageState extends State<RecordPage> {
     if (_isProcessing) _controller?.stopImageStream();
     _controller?.dispose();
     _audioPlayer.dispose();
+    _flutterTts.stop();
     super.dispose();
   }
 
