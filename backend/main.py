@@ -44,6 +44,8 @@ current_mode = "beginner"
 EXERCISE_CLASSES = {
     "squat": SquatAnalyzer,
     "pushup": PushupAnalyzer,
+    "deadlift": DeadliftAnalyzer,
+    "bench": BenchAnalyzer,
 }
 
 
