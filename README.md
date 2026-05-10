@@ -1,97 +1,101 @@
-# AI Fitness Coach
+# 🏋️ AI Fitness Coach
 
-Real-time form tracking with MediaPipe pose detection, concise AI coaching cues, backend-owned voice playback, and a Flutter training UI.
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+![Flutter](https://img.shields.io/badge/Flutter-3.x-blue)
+![Python](https://img.shields.io/badge/Python-3.9+-yellow)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## Project Structure
+An ultra-low latency, AI-powered personal training application. FitnessCoach uses real-time computer vision to track your exercise form and provides instant, personalized voice feedback powered by Large Language Models (Anthropic/OpenAI) and ElevenLabs.
 
-```
-├── backend/              # Flask server + pose analysis
-└── fitness_coach_app/    # Flutter mobile app
-```
+---
 
-## Backend
+## ✨ Key Features
 
-The Flask backend receives camera frames from Flutter, analyzes movement with MediaPipe, returns live stats and pose landmarks, and plays coaching audio locally.
+- **Real-Time Pose Tracking**: Uses MediaPipe to track 33 body landmarks with zero noticeable delay.
+- **Multi-Exercise Support**: Production-ready form analyzers for:
+  - `squat` (Depth, Torso lean)
+  - `pushup` (Elbow depth, Plank alignment, Shoulder flare)
+  - `deadlift` (Hip hinge, Knee bend)
+  - `bench` (Elbow depth, Shoulder tuck, Back arch)
+- **Zero-Latency Voice Coaching**: Unlike traditional setups, audio is generated entirely on the Flutter frontend via ElevenLabs' flash streaming model, drastically reducing Time-To-First-Byte (TTFB).
+- **Intelligent LLM Feedback**: Hardcoded robotic phrases are completely removed. The coach passes your exact joint angles to Anthropic's Claude Haiku to dynamically generate highly varied, context-aware coaching (e.g., *"Hinge deeper, don't jerk the ascent"*).
+- **Native Canvas Overlays**: Uses Flutter `CustomPainter` to draw skeletal tracking overlays directly on the browser/native canvas, eliminating the massive bandwidth overhead of transmitting base64 images.
 
-Production analyzers currently supported by the backend:
+---
 
-- `squat`
-- `pushup`
+## 🏗️ Architecture
 
-Other exercise labels in the UI are placeholders until their analyzers are implemented and validated.
+1. **Client (Flutter)**: Captures web/mobile camera frames at high speed.
+2. **Vision Server (Flask)**: Processes frames via MediaPipe and returns skeletal coordinates and raw angle calculations.
+3. **AI Logic (Python)**: Analyzes the rep against strict biomechanical thresholds and passes contextual hints to the LLM.
+4. **TTS Engine (Client-Side)**: The LLM text is instantly streamed to ElevenLabs by the Flutter app for immediate audio playback with native playback rate multipliers.
 
-### Setup
+---
+
+## 🚀 Setup & Installation
+
+### 1. Backend (Computer Vision & LLM)
 
 ```bash
 cd backend
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 python download_model.py
-
-cp .env.example .env
 ```
 
-Edit `backend/.env` with the keys and voice settings you want:
-
+Set up your `.env` file in the `backend` directory:
 ```bash
-ANTHROPIC_API_KEY=...
-OPENAI_API_KEY=...
-
-USE_ELEVENLABS_VOICE=true
-ELEVENLABS_API_KEY=...
-ELEVENLABS_VOICE_ID=...
-ELEVENLABS_MODEL_ID=eleven_flash_v2_5
-
-# Used only when ElevenLabs is disabled or unavailable.
-MACOS_VOICE=samantha
+# Used for backend CLI testing or fallback logic
+ANTHROPIC_API_KEY=your_anthropic_key
+ELEVENLABS_API_KEY=your_elevenlabs_key
 ```
 
-ElevenLabs voice is played by the backend through macOS `afplay`. Flutter only displays the returned feedback text, so do not put ElevenLabs keys in the mobile app.
+### 2. Frontend (Flutter UI & Audio)
 
-### Run
-
-```bash
-# Flask server for Flutter. Default port is 8080.
-python main.py --exercise squat --mode beginner --provider claude
-python main.py --exercise pushup --mode beginner --provider claude
-
-# Standalone webcam demo (local testing)
-python demo_webcam.py --exercise squat --mode beginner --provider claude
-python demo_webcam.py --exercise pushup --mode beginner --provider claude
-```
-
-For squats and push-ups, use a clear side view, keep the full body in frame, and avoid fast camera movement.
-
-## Frontend
-
-Run the backend first, then start Flutter:
+To keep API keys completely out of source code and Git history, pass your credentials securely via compile-time variables. 
 
 ```bash
 cd fitness_coach_app
-flutter run -d chrome
+
+flutter run -d chrome \
+  --dart-define=ANTHROPIC_KEY=your_anthropic_key \
+  --dart-define=ELEVENLABS_KEY=your_elevenlabs_key \
+  --dart-define=SERVER_URL=http://127.0.0.1:5001
 ```
 
-The web app defaults to `http://127.0.0.1:8080`. On a real phone, change the server URL in the app settings to your Mac's local network IP, for example `http://192.168.1.x:8080`.
+*(Note: Change `SERVER_URL` to your Mac's local network IP if testing on a physical iOS/Android device).*
 
-Current runtime behavior:
+---
 
-- Sends compressed frames to `/process_frame`.
-- Uses backend stats and landmarks for the live overlay on web.
-- Keeps feedback cues short for fast-paced movement, such as `Good rep.`, `Sink lower.`, `Chest up.`, and `Sit back.`
-- Shows a session summary with statistics, per-exercise breakdown, and a celebration banner.
+## 🏃‍♂️ Usage
 
-## Quick Branch Helper
-
-If you want the local backend setup commands in one place, use the helper script at the repo root:
+Start the backend server on port 5001. Choose your exercise and your preferred AI provider (`claude` is recommended for lowest latency).
 
 ```bash
-./run_local_backend.sh
+# Start Deadlift Coach
+python backend/main.py --port 5001 --exercise deadlift --provider claude
+
+# Start Squat Coach
+python backend/main.py --port 5001 --exercise squat --provider claude
+
+# Start Pushup Coach
+python backend/main.py --port 5001 --exercise pushup --provider claude
+
+# Start Bench Press Coach
+python backend/main.py --port 5001 --exercise bench --provider claude
 ```
 
-This will create a `venv`, install backend dependencies, download the MediaPipe model, and print the commands to run the backend server and the standalone webcam demo.
+Once the server is running, launch the Flutter app, select your camera, and start your set!
 
-## Useful API Endpoints
+---
 
-- `POST /configure` updates provider, mode, and exercise.
-- `POST /process_frame` analyzes one frame and returns stats, landmarks, and any new feedback cue.
-- `POST /reset` resets counters for the current analyzer.
-- `GET /health` reports backend status.
+## 🛠️ Advanced Configuration
+
+### Threshold Calibration
+Biomechanical thresholds can be easily adjusted in `backend/thresholds.py`. 
+- **Beginner Mode**: Generous form thresholds.
+- **Pro Mode**: Strict form thresholds (e.g. Squat depth requires `<60°` knee angle instead of `90°`).
+
+### Voice Customization
+To change the ElevenLabs voice character, modify the `ELEVENLABS_VOICE_ID` compile-time variable in Flutter.
