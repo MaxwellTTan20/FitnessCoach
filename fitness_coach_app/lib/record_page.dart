@@ -468,11 +468,16 @@ class _RecordPageState extends State<RecordPage> {
         }).toList();
 
         if (mounted) {
-          // Instant Audio Cue (Ding!)
+          // Instant Audio Cues
           final int oldCorrect = (_stats['correct_count'] as num? ?? 0).toInt();
           final int newCorrect = (newStats['correct_count'] as num? ?? 0).toInt();
+          final int oldIncorrect = (_stats['incorrect_count'] as num? ?? 0).toInt();
+          final int newIncorrect = (newStats['incorrect_count'] as num? ?? 0).toInt();
+
           if (newCorrect > oldCorrect) {
             _sfxPlayer.play(AssetSource('audio/ding.m4a'));
+          } else if (newIncorrect > oldIncorrect) {
+            _sfxPlayer.play(AssetSource('audio/buzz.m4a'));
           }
 
           setState(() {

@@ -1,39 +1,8 @@
-"""
-AI Coach - unified interface for Claude and OpenAI coaching feedback.
-Exercise-specific system prompts and rep data formatting.
-"""
 import os
 from typing import Literal
 
-EXERCISE_SYSTEM_PROMPTS = {
-    "squat": """You are a concise fitness coach providing real-time voice feedback during squat exercises.
-
-When given rep data, provide 1-2 sentences of helpful, encouraging feedback. Focus on:
-- Acknowledging good form when depth and torso position are correct
-- Correcting shallow depth (knee angle too high at bottom)
-- Correcting excessive forward lean (hip angle out of range)
-- Noting rushed descent if under 0.5 seconds
-- Noting bouncing out of the bottom if ascent is under 0.3 seconds
-
-Keep responses SHORT (under 25 words) since they will be spoken aloud during exercise.
-Never use bullet points or lists. Speak naturally as a coach would.""",
-
-    "pushup": """You are a concise fitness coach providing real-time voice feedback during push-up exercises.
-
-When given rep data, provide 1-2 sentences of helpful, encouraging feedback. Focus on:
-- Acknowledging good form when depth and body alignment are correct
-- Correcting insufficient depth (elbow angle too high at bottom)
-- Correcting hip sag or piking (body alignment angle out of range)
-- Correcting elbow flare (glenohumeral/shoulder angle out of range)
-- Noting rushed descent or bouncing out of the bottom
-
-Keep responses SHORT (under 25 words) since they will be spoken aloud during exercise.
-Never use bullet points or lists. Speak naturally as a coach would.""",
-}
-
-
 class AICoach:
-    """Unified interface for AI coaching feedback using Claude or OpenAI."""
+    """Manages AI interactions for coaching feedback using Anthropic or OpenAI."""
 
     def __init__(
         self,
@@ -43,20 +12,21 @@ class AICoach:
     ):
         self.provider = provider
         self.exercise = exercise
-        self.system_prompt = EXERCISE_SYSTEM_PROMPTS.get(
-            exercise, EXERCISE_SYSTEM_PROMPTS["squat"]
-        )
+        self.api_key = api_key
+
+        if not provider:
+            return  # Will use fallback logic
 
         if provider == "claude":
             self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
             if not self.api_key:
-                raise ValueError("Anthropic API key required. Set ANTHROPIC_API_KEY env var or pass api_key.")
+                raise ValueError("Anthropic API key required for claude provider.")
             import anthropic
             self.client = anthropic.Anthropic(api_key=self.api_key)
         elif provider == "openai":
             self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
             if not self.api_key:
-                raise ValueError("OpenAI API key required. Set OPENAI_API_KEY env var or pass api_key.")
+                raise ValueError("OpenAI API key required for openai provider.")
             import openai
             self.client = openai.OpenAI(api_key=self.api_key)
         else:
@@ -102,10 +72,9 @@ class AICoach:
         if hip_angle < 50:
             return "Chest up."
         if hip_angle > 120:
-            return "Sit back."
-        if knee_angle > 75:
-            return "Sink lower."
-        return "Fix form."
+            return "Get lower."
+
+        return ""
 
     def _get_pushup_live_feedback(self, rep_data: dict) -> str:
         if rep_data.get("is_correct"):
@@ -113,20 +82,23 @@ class AICoach:
 
         tempo_status = rep_data.get("tempo", {}).get("status")
         if tempo_status == "rushed_descent":
-            return "Slow down."
+            return "Control the descent."
         if tempo_status == "bounced_out":
-            return "Control the press."
+            return "Don't bounce."
 
         elbow_angle = rep_data.get("elbow_angle", 0)
-        body_angle = rep_data.get("body_angle", 180)
-        shoulder_angle = rep_data.get("shoulder_angle", 0)
-        if body_angle < 150:
-            return "Stay straight."
-        if elbow_angle > 90:
-            return "Go lower."
-        if shoulder_angle > 90:
-            return "Tuck elbows."
-        return "Fix form."
+        if elbow_angle > 110:
+            return "Lower chest to floor."
+
+        return ""
+
+    @property
+    def system_prompt(self) -> str:
+        return f"""You are an elite fitness coach specializing in the {self.exercise}.
+Analyze the rep data and provide exactly one short sentence of actionable feedback (max 6 words).
+If the rep is CORRECT, give brief encouragement or reinforce what went well.
+If INCORRECT, state the specific cue to fix it based on the angles.
+Focus on safety and mechanical efficiency. Keep it punchy and direct."""
 
     def _format_rep_data(self, rep_data: dict) -> str:
         if self.exercise == "pushup":
@@ -135,17 +107,12 @@ class AICoach:
 
     def _format_squat_rep(self, rep_data: dict) -> str:
         tempo = rep_data.get("tempo", {})
-        descent = tempo.get("descent_seconds")
-        ascent = tempo.get("ascent_seconds")
-        tempo_status = tempo.get("status", "unknown")
-        descent_str = f"{descent:.1f}s" if descent is not None else "?"
-        ascent_str = f"{ascent:.1f}s" if ascent is not None else "?"
-        tempo_str = f"{descent_str} descent, {ascent_str} ascent ({tempo_status})"
+        tempo_str = f"Eccentric {tempo.get('eccentric_ms', 0)}ms, Concentric {tempo.get('concentric_ms', 0)}ms"
 
         return f"""Rep #{rep_data['rep_number']} completed:
 - Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
-- Knee angle at depth: {rep_data.get('knee_angle', 0):.0f} degrees
-- Hip/torso angle at depth: {rep_data.get('hip_angle', 0):.0f} degrees
+- Max knee flexion: {rep_data.get('knee_angle', 0):.0f} degrees
+- Min hip angle: {rep_data.get('hip_angle', 0):.0f} degrees
 - Tempo: {tempo_str}
 - Mode: {rep_data['mode']}
 - Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
@@ -154,12 +121,7 @@ Provide brief coaching feedback for this rep."""
 
     def _format_pushup_rep(self, rep_data: dict) -> str:
         tempo = rep_data.get("tempo", {})
-        descent = tempo.get("descent_seconds")
-        ascent = tempo.get("ascent_seconds")
-        tempo_status = tempo.get("status", "unknown")
-        descent_str = f"{descent:.1f}s" if descent is not None else "?"
-        ascent_str = f"{ascent:.1f}s" if ascent is not None else "?"
-        tempo_str = f"{descent_str} descent, {ascent_str} ascent ({tempo_status})"
+        tempo_str = f"Eccentric {tempo.get('eccentric_ms', 0)}ms, Concentric {tempo.get('concentric_ms', 0)}ms"
 
         return f"""Rep #{rep_data['rep_number']} completed:
 - Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
@@ -174,7 +136,7 @@ Provide brief coaching feedback for this rep."""
 
     def _get_claude_feedback(self, user_message: str) -> str:
         response = self.client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=100,
             system=self.system_prompt,
             messages=[{"role": "user", "content": user_message}],
