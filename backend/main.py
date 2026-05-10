@@ -1,3 +1,9 @@
+import os
+os.environ['GLOG_minloglevel'] = '3'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['MEDIAPIPE_DISABLE_GPU'] = '1'
+os.environ['GRPC_VERBOSITY'] = 'NONE'
+os.environ['GRPC_TRACE'] = ''
 """
 Flask server for AI Fitness Coach.
 Receives frames from the Flutter app, processes with MediaPipe + AI coaching, returns annotated frames.
@@ -139,7 +145,9 @@ def create_feedback_callback():
                     flush=True,
                 )
                 if ai_coach:
+                    t0 = time.perf_counter()
                     feedback = ai_coach.get_feedback(rep_data)
+                    print(f"[AI Coach] took {(time.perf_counter()-t0)*1000:.0f}ms → {feedback}")
                     if rep_number < _latest_rep_number:
                         print(
                             f"[AI Coach] Dropping stale feedback for rep #{rep_number}",
@@ -148,8 +156,8 @@ def create_feedback_callback():
                         return
                     print(f"[AI Coach] {feedback}")
                     _pending_ai_feedback = feedback
-                    if voice_coach:
-                        voice_coach.speak(feedback)
+                if voice_coach:
+                    threading.Thread(target=voice_coach.speak, args=(feedback,), daemon=True).start()
                 else:
                     print(f"[Rep Complete] {rep_data}")
             except Exception as e:
@@ -176,8 +184,12 @@ def process_frame():
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         frame_height, frame_width = frame.shape[:2]
 
-        with _analyzer_lock:
+        if not _analyzer_lock.acquire(timeout=8.0):
+            return jsonify({"error": "analyzer busy"}), 503
+        try:
             annotated_frame = analyzer.process_frame(frame)
+        finally:
+            _analyzer_lock.release()
 
         annotated_b64 = None
         if include_annotated:
@@ -265,8 +277,14 @@ def ping():
 
 @app.route("/reset", methods=["POST"])
 def reset():
+    global analyzer, current_exercise, current_mode
     try:
-        analyzer.reset()
+        if analyzer is not None:
+            try:
+                analyzer.close()
+            except Exception:
+                pass
+        analyzer = create_analyzer(current_exercise, current_mode, create_feedback_callback())
         return jsonify({"message": "Counters reset"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -332,4 +350,7 @@ if __name__ == "__main__":
     print(f"║  Set Flutter server URL to:          ║")
     print(f"║  http://{local_ip}:{args.port}".ljust(39) + "║")
     print(f"╚══════════════════════════════════════╝")
-    app.run(host="0.0.0.0", port=args.port, debug=False)
+    # threaded=False: serialize all requests in one thread.
+    # Prevents concurrent analyzer.process_frame() calls that crash MediaPipe's
+    # C++ VIDEO mode (it requires strictly increasing timestamps, not thread-safe).
+    app.run(host="0.0.0.0", port=args.port, debug=False, threaded=False)

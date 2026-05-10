@@ -255,11 +255,16 @@ class _RecordPageState extends State<RecordPage> {
     }
   }
 
-  void _startProcessing() {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-    setState(() => _isProcessing = true);
-    _controller!.startImageStream(_handleFrame);
-  }
+void _startProcessing() {
+  if (_controller == null || !_controller!.value.isInitialized) return;
+  // Reset backend before starting so analyzer is fresh
+  http.post(
+    Uri.parse('$_serverUrl/reset'),
+    headers: {'ngrok-skip-browser-warning': 'true'},
+  ).ignore();
+  setState(() => _isProcessing = true);
+  _controller!.startImageStream(_handleFrame);
+}
 
   // Merges the current live stats into _sessionExerciseStats before a switch or finish.
   void _flushCurrentExerciseStats() {
@@ -318,6 +323,9 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   bool _didLogFormat = false;
+  DateTime? _lastFrameSentAt;
+  static const _kMinFrameIntervalMs = 150; // ~6-7 FPS to backend
+
   void _handleFrame(CameraImage cameraImage) {
     if (!_didLogFormat) {
       _didLogFormat = true;
@@ -327,6 +335,12 @@ class _RecordPageState extends State<RecordPage> {
           'planes=${cameraImage.planes.length}');
     }
     if (_framesInFlight >= _kMaxFramesInFlight || !_isProcessing || !mounted) return;
+    final now = DateTime.now();
+    if (_lastFrameSentAt != null &&
+        now.difference(_lastFrameSentAt!).inMilliseconds < _kMinFrameIntervalMs) {
+      return;
+    }
+    _lastFrameSentAt = now;
     _framesInFlight++;
     _processFrame(cameraImage).whenComplete(() => _framesInFlight--);
   }
@@ -352,7 +366,7 @@ class _RecordPageState extends State<RecordPage> {
             headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
             body: jsonEncode({'image': base64Encode(jpegBytes)}),
           )
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 15));
 
       if (!mounted || !_isProcessing) return;
 
@@ -382,8 +396,15 @@ class _RecordPageState extends State<RecordPage> {
 
         final aiFeedback = data['ai_feedback'] as String? ?? '';
         if (aiFeedback.isNotEmpty) _speakFeedback(aiFeedback);
+      } else {
+        debugPrint('[Frame] Backend error ${response.statusCode}: ${response.body}');
+        _consecutiveFrameErrors++;
+        if (_consecutiveFrameErrors >= _kErrorThreshold && mounted) {
+          setState(() => _backendStatus = 'Backend error ${response.statusCode} — restart backend');
+        }
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[Frame] Network error: $e');
       _consecutiveFrameErrors++;
       if (_consecutiveFrameErrors >= _kErrorThreshold && mounted) {
         setState(() => _backendStatus = 'Backend unreachable — check ngrok URL or restart tunnel');
@@ -413,10 +434,7 @@ class _RecordPageState extends State<RecordPage> {
       await file.writeAsBytes(response.bodyBytes);
 
       // Wait for playback to fully complete before allowing next feedback
-      final completer = Completer<void>();
-      _audioPlayer.onPlayerComplete.first.then((_) => completer.complete());
       await _audioPlayer.play(DeviceFileSource(file.path));
-      await completer.future;
     } else {
       debugPrint('[TTS] ElevenLabs ${response.statusCode}: ${response.body}');
       await _flutterTts.speak(text);

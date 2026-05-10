@@ -28,7 +28,7 @@ RunningMode = mp.tasks.vision.RunningMode
 
 POSE_CONNECTIONS = mp.tasks.vision.PoseLandmarksConnections.POSE_LANDMARKS
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "pose_landmarker_heavy.task")
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "pose_landmarker_lite.task")
 MAX_LOST_POSE_DURING_REP_SECONDS = 0.35
 MIN_REP_BUFFER_FRAMES = 6
 MIN_REP_DURATION_SECONDS = 0.35
