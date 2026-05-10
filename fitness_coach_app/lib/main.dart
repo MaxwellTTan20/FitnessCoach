@@ -156,7 +156,7 @@ class _HomeTab extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: const [
-                          Text('Lift & Flow', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w700)),
+                          Text('CapyCoach', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w700)),
                           SizedBox(height: 8),
                           Text('Train with confident motion.', style: TextStyle(color: Colors.white70, fontSize: 16)),
                         ],
@@ -194,10 +194,10 @@ class _HomeTab extends StatelessWidget {
                     crossAxisSpacing: 16,
                     childAspectRatio: screenWidth < 360 ? 3 / 1 : 4 / 3,
                     children: [
-                      _WorkoutTile(title: 'Squat',    description: 'Warm-up: 1×3', icon: Icons.fitness_center,    onTap: () => launchWarmup('Squat',   0)),
-                      _WorkoutTile(title: 'Bench',    description: 'Warm-up: 1×3', icon: Icons.shield_moon,       onTap: () => launchWarmup('Bench',   1)),
-                      _WorkoutTile(title: 'Deadlift', description: 'Warm-up: 1×3', icon: Icons.timeline,          onTap: () => launchWarmup('Deadlift',2)),
-                      _WorkoutTile(title: 'Push-ups', description: 'Warm-up: 1×3', icon: Icons.self_improvement,  onTap: () => launchWarmup('Push-up', 3)),
+                      _WorkoutTile(title: 'Squat',    description: 'Warm-up: 1×3', imagePath: 'lib/images/icons/squats.png',   onTap: () => launchWarmup('Squat',   0)),
+                      _WorkoutTile(title: 'Bench',    description: 'Warm-up: 1×3', imagePath: 'lib/images/icons/bench.png',    onTap: () => launchWarmup('Bench',   1)),
+                      _WorkoutTile(title: 'Deadlift', description: 'Warm-up: 1×3', imagePath: 'lib/images/icons/deadlift.png', onTap: () => launchWarmup('Deadlift',2)),
+                      _WorkoutTile(title: 'Push-ups', description: 'Warm-up: 1×3', imagePath: 'lib/images/icons/pushup.png',   onTap: () => launchWarmup('Push-up', 3)),
                     ],
                   );
                 }),
@@ -215,10 +215,10 @@ class _HomeTab extends StatelessWidget {
 
 class _WorkoutTile extends StatelessWidget {
   final String title;
-  final IconData icon;
+  final String imagePath;
   final String description;
   final VoidCallback? onTap;
-  const _WorkoutTile({required this.title, required this.description, required this.icon, this.onTap});
+  const _WorkoutTile({required this.title, required this.description, required this.imagePath, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -239,7 +239,12 @@ class _WorkoutTile extends StatelessWidget {
               Container(
                 decoration: BoxDecoration(color: const Color(0xFF0F4C81), borderRadius: BorderRadius.circular(12)),
                 padding: const EdgeInsets.all(8),
-                child: Icon(icon, color: Colors.white, size: 22),
+                child: Image.asset(
+                  imagePath,
+                  width: 22,
+                  height: 22,
+                  color: Colors.white,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
