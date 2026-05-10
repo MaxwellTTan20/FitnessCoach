@@ -140,8 +140,7 @@ def create_feedback_callback():
                         return
                     print(f"[AI Coach] {feedback}")
                     _pending_ai_feedback = feedback
-                    if voice_coach:
-                        voice_coach.speak(feedback)
+
                 else:
                     print(f"[Rep Complete] {rep_data}")
             except Exception as e:
