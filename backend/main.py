@@ -28,6 +28,7 @@ from PIL import Image
 
 from ai_coach import AICoach
 from analyzer import SquatAnalyzer, PushupAnalyzer, DeadliftAnalyzer, BenchAnalyzer
+from voice import VoiceCoach
 
 app = Flask(__name__)
 CORS(app)

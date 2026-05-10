@@ -104,7 +104,12 @@ class AICoach:
     def _get_live_feedback(self, rep_data: dict) -> str:
         if self.exercise == "pushup":
             return self._get_pushup_live_feedback(rep_data)
-        return self._get_squat_live_feedback(rep_data)
+        elif self.exercise == "deadlift":
+            return self._get_deadlift_live_feedback(rep_data)
+        elif self.exercise == "bench":
+            return self._get_bench_live_feedback(rep_data)
+        else:  # squat
+            return self._get_squat_live_feedback(rep_data)
 
     def _get_squat_live_feedback(self, rep_data: dict) -> str:
         if rep_data.get("is_correct"):
@@ -145,6 +150,45 @@ class AICoach:
             return "Go lower."
         if shoulder_angle > 90:
             return "Tuck elbows."
+        return "Fix form."
+
+    def _get_deadlift_live_feedback(self, rep_data: dict) -> str:
+        if rep_data.get("is_correct"):
+            return "Good rep."
+
+        tempo_status = rep_data.get("tempo", {}).get("status")
+        if tempo_status == "rushed_descent":
+            return "Control the descent."
+        if tempo_status == "bounced_out":
+            return "Smooth pull."
+
+        hip_angle = rep_data.get("hip_angle", 0)
+        knee_angle = rep_data.get("knee_angle", 0)
+        if hip_angle > 100:  # Not enough hip hinge
+            return "Hinge more."
+        if knee_angle > 100:  # Knees too bent
+            return "Straighten legs."
+        return "Fix form."
+
+    def _get_bench_live_feedback(self, rep_data: dict) -> str:
+        if rep_data.get("is_correct"):
+            return "Good rep."
+
+        tempo_status = rep_data.get("tempo", {}).get("status")
+        if tempo_status == "rushed_descent":
+            return "Slow down."
+        if tempo_status == "bounced_out":
+            return "Control the press."
+
+        elbow_angle = rep_data.get("elbow_angle", 0)
+        body_angle = rep_data.get("body_angle", 0)
+        shoulder_angle = rep_data.get("shoulder_angle", 0)
+        if elbow_angle > 90:
+            return "Go lower."
+        if shoulder_angle > 90:
+            return "Tuck elbows."
+        if body_angle > 15:  # Too much arch
+            return "Lie flat."
         return "Fix form."
 
     def _format_rep_data(self, rep_data: dict) -> str:
