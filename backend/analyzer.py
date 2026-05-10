@@ -27,6 +27,9 @@ RunningMode = mp.tasks.vision.RunningMode
 POSE_CONNECTIONS = mp.tasks.vision.PoseLandmarksConnections.POSE_LANDMARKS
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "pose_landmarker_heavy.task")
+MAX_LOST_POSE_DURING_REP_SECONDS = 0.35
+MIN_REP_BUFFER_FRAMES = 6
+MIN_REP_DURATION_SECONDS = 0.35
 
 
 class ExerciseAnalyzer:
@@ -48,6 +51,7 @@ class ExerciseAnalyzer:
     ACTIVE_STATE = "active"
     BUFFER_START = 165.0   # primary angle below this → start buffering
     BUFFER_END = 170.0     # primary angle above this (after active) → stop buffering
+    DISCARD_ON_MISALIGNMENT = True
 
     def __init__(self, mode="beginner", on_rep_complete=None):
         self.mode = mode
@@ -70,6 +74,7 @@ class ExerciseAnalyzer:
         )
         self.landmarker = PoseLandmarker.create_from_options(options)
         self.frame_timestamp_ms = 0
+        self._last_frame_monotonic = time.monotonic()
 
         self.correct_count = 0
         self.incorrect_count = 0
@@ -86,6 +91,7 @@ class ExerciseAnalyzer:
         self._is_buffering = False
         self._buffer_start_time = 0.0
         self._buffer_saw_active = False
+        self._missing_pose_started_at = None
 
     def _get_thresholds(self, mode):
         raise NotImplementedError
@@ -108,6 +114,7 @@ class ExerciseAnalyzer:
         self._is_buffering = False
         self._buffer_start_time = 0.0
         self._buffer_saw_active = False
+        self._missing_pose_started_at = None
 
     def close(self):
         self.landmarker.close()
@@ -118,17 +125,22 @@ class ExerciseAnalyzer:
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
 
-        self.frame_timestamp_ms += 33
+        now = time.monotonic()
+        elapsed_ms = max(1, int((now - self._last_frame_monotonic) * 1000))
+        self._last_frame_monotonic = now
+        self.frame_timestamp_ms += elapsed_ms
         results = self.landmarker.detect_for_video(mp_image, self.frame_timestamp_ms)
 
         if not results.pose_landmarks or len(results.pose_landmarks) == 0:
             elapsed = time.time() - self.last_detection_time
             if elapsed > INACTIVE_THRESH:
                 self.reset()
+            self._handle_missing_pose()
             self.last_pose_landmarks = []
             return frame
 
         self.last_detection_time = time.time()
+        self._missing_pose_started_at = None
         landmarks = results.pose_landmarks[0]
         self.last_pose_landmarks = [
             {"x": float(lm.x), "y": float(lm.y), "z": float(getattr(lm, "z", 0.0))}
@@ -141,7 +153,9 @@ class ExerciseAnalyzer:
         misaligned, alignment_feedback = self._check_alignment(landmarks, w, h)
         if misaligned:
             self.feedback = alignment_feedback
-            return frame
+            if self.DISCARD_ON_MISALIGNMENT:
+                self._discard_current_rep()
+                return frame
 
         # Angle extraction (subclass sets primary_angle, secondary_angle, _current_angles)
         self._update_angles(landmarks, w, h)
@@ -174,6 +188,11 @@ class ExerciseAnalyzer:
             self.state = self.NEUTRAL_STATE
 
             rep_analysis = self._analyze_rep()
+            if not self._is_valid_completed_rep(rep_analysis):
+                self.feedback = "Keep tracking"
+                self._discard_current_rep()
+                return frame
+
             is_correct, feedback, extra_data = self._on_rep_complete(rep_analysis)
             self.feedback = feedback
 
@@ -204,6 +223,35 @@ class ExerciseAnalyzer:
             self._buffer_saw_active = False
 
         return frame
+
+    def _handle_missing_pose(self):
+        if not self._is_buffering and self.state != self.ACTIVE_STATE:
+            self._missing_pose_started_at = None
+            return
+
+        now = time.time()
+        if self._missing_pose_started_at is None:
+            self._missing_pose_started_at = now
+            return
+
+        if now - self._missing_pose_started_at >= MAX_LOST_POSE_DURING_REP_SECONDS:
+            self._discard_current_rep()
+            self.feedback = "Step into frame"
+
+    def _discard_current_rep(self):
+        self.state = self.NEUTRAL_STATE
+        self.current_rep_buffer = []
+        self._rep_frame_index = 0
+        self._is_buffering = False
+        self._buffer_start_time = 0.0
+        self._buffer_saw_active = False
+        self._missing_pose_started_at = None
+
+    def _is_valid_completed_rep(self, rep_analysis):
+        return (
+            rep_analysis["frame_count"] >= MIN_REP_BUFFER_FRAMES
+            and rep_analysis["duration_seconds"] >= MIN_REP_DURATION_SECONDS
+        )
 
     def _check_alignment(self, landmarks, w, h):
         return False, ""
@@ -251,6 +299,8 @@ class ExerciseAnalyzer:
                 "secondary_angle": 0.0,
                 "angles": {},
                 "deepest_frame_index": None,
+                "frame_count": 0,
+                "duration_seconds": 0.0,
                 "tempo": {"descent_seconds": None, "ascent_seconds": None, "status": "unknown"},
             }
 
@@ -278,6 +328,8 @@ class ExerciseAnalyzer:
             "secondary_angle": median_angles.get("secondary", 0.0),
             "angles": median_angles,
             "deepest_frame_index": i_min,
+            "frame_count": len(buf),
+            "duration_seconds": round((buf[-1]["timestamp_ms"] - buf[0]["timestamp_ms"]) / 1000.0, 2),
             "tempo": tempo,
         }
 
@@ -352,6 +404,7 @@ class SquatAnalyzer(ExerciseAnalyzer):
     ACTIVE_STATE = "squatting"
     BUFFER_START = BUFFER_KNEE_START
     BUFFER_END = BUFFER_KNEE_END
+    DISCARD_ON_MISALIGNMENT = False
 
     def __init__(self, mode="beginner", on_rep_complete=None):
         super().__init__(mode, on_rep_complete)

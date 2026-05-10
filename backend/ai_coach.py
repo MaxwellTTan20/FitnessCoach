@@ -87,6 +87,10 @@ class AICoach:
 
     def get_feedback(self, rep_data: dict) -> str:
         """Get coaching feedback for a completed rep."""
+        live_feedback = self._get_live_feedback(rep_data)
+        if live_feedback:
+            return live_feedback
+
         user_message = self._format_rep_data(rep_data)
         try:
             if self.provider == "claude":
@@ -95,7 +99,53 @@ class AICoach:
                 return self._get_openai_feedback(user_message)
         except Exception as e:
             print(f"AI Coach error: {e}")
-            return "Good rep! Keep it up." if rep_data.get("is_correct") else "Watch your form on the next one."
+            return "Good rep." if rep_data.get("is_correct") else "Fix form."
+
+    def _get_live_feedback(self, rep_data: dict) -> str:
+        if self.exercise == "pushup":
+            return self._get_pushup_live_feedback(rep_data)
+        return self._get_squat_live_feedback(rep_data)
+
+    def _get_squat_live_feedback(self, rep_data: dict) -> str:
+        if rep_data.get("is_correct"):
+            return "Good rep."
+
+        tempo_status = rep_data.get("tempo", {}).get("status")
+        if tempo_status == "rushed_descent":
+            return "Slow down."
+        if tempo_status == "bounced_out":
+            return "Control the ascent."
+
+        knee_angle = rep_data.get("knee_angle", 0)
+        hip_angle = rep_data.get("hip_angle", 0)
+        if hip_angle < 50:
+            return "Chest up."
+        if hip_angle > 120:
+            return "Sit back."
+        if knee_angle > 75:
+            return "Sink lower."
+        return "Fix form."
+
+    def _get_pushup_live_feedback(self, rep_data: dict) -> str:
+        if rep_data.get("is_correct"):
+            return "Good rep."
+
+        tempo_status = rep_data.get("tempo", {}).get("status")
+        if tempo_status == "rushed_descent":
+            return "Slow down."
+        if tempo_status == "bounced_out":
+            return "Control the press."
+
+        elbow_angle = rep_data.get("elbow_angle", 0)
+        body_angle = rep_data.get("body_angle", 180)
+        shoulder_angle = rep_data.get("shoulder_angle", 0)
+        if body_angle < 150:
+            return "Stay straight."
+        if elbow_angle > 90:
+            return "Go lower."
+        if shoulder_angle > 90:
+            return "Tuck elbows."
+        return "Fix form."
 
     def _format_rep_data(self, rep_data: dict) -> str:
         if self.exercise == "pushup":
