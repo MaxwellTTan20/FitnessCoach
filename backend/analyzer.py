@@ -1,5 +1,6 @@
 import time
 import os
+import math
 import statistics
 import cv2
 import mediapipe as mp
@@ -32,6 +33,7 @@ MIN_REP_BUFFER_FRAMES = 6
 MIN_REP_DURATION_SECONDS = 0.35
 SIDE_PROFILE_HYSTERESIS = 0.08
 SIDE_PROFILE_JOINTS = ("shoulder", "hip", "knee", "ankle")
+SQUAT_TRACKED_JOINTS = SIDE_PROFILE_JOINTS + ("heel", "foot_index")
 
 
 def serialize_landmark(landmark):
@@ -81,6 +83,24 @@ def get_side_landmark_coords(landmarks, side, joint, w, h):
         w,
         h,
     )
+
+
+def line_angle_from_horizontal(p1, p2):
+    x1, y1 = p1
+    x2, y2 = p2
+    return abs(math.degrees(math.atan2(y2 - y1, x2 - x1)))
+
+
+def summarize_side_landmarks(landmarks, side):
+    summary = {}
+    for joint in SQUAT_TRACKED_JOINTS:
+        landmark = landmarks[LANDMARKS[f"{side}_{joint}"]]
+        summary[joint] = (
+            dict(landmark)
+            if isinstance(landmark, dict)
+            else serialize_landmark(landmark)
+        )
+    return summary
 
 
 class ExerciseAnalyzer:
@@ -347,6 +367,7 @@ class ExerciseAnalyzer:
                 "secondary_angle": 0.0,
                 "angles": {},
                 "deepest_frame_index": None,
+                "deepest_landmarks": [],
                 "frame_count": 0,
                 "duration_seconds": 0.0,
                 "tempo": {"descent_seconds": None, "ascent_seconds": None, "status": "unknown"},
@@ -376,6 +397,7 @@ class ExerciseAnalyzer:
             "secondary_angle": median_angles.get("secondary", 0.0),
             "angles": median_angles,
             "deepest_frame_index": i_min,
+            "deepest_landmarks": buf[i_min]["landmarks"],
             "frame_count": len(buf),
             "duration_seconds": round((buf[-1]["timestamp_ms"] - buf[0]["timestamp_ms"]) / 1000.0, 2),
             "tempo": tempo,
@@ -483,9 +505,16 @@ class SquatAnalyzer(ExerciseAnalyzer):
         hip = get_side_landmark_coords(landmarks, side, "hip", w, h)
         knee = get_side_landmark_coords(landmarks, side, "knee", w, h)
         ankle = get_side_landmark_coords(landmarks, side, "ankle", w, h)
+        heel = get_side_landmark_coords(landmarks, side, "heel", w, h)
+        foot_index = get_side_landmark_coords(landmarks, side, "foot_index", w, h)
 
         knee_angle = find_angle(hip, knee, ankle)
         hip_angle = find_angle(shoulder, hip, knee)
+        torso_offset_angle = find_offset_angle(shoulder, hip)
+        foot_pitch_angle = line_angle_from_horizontal(heel, foot_index)
+        side_confidence = side_profile_confidence(landmarks, side)
+        opposite_side = "right" if side == "left" else "left"
+        opposite_side_confidence = side_profile_confidence(landmarks, opposite_side)
 
         self.knee_angle = knee_angle
         self.hip_angle = hip_angle
@@ -496,6 +525,10 @@ class SquatAnalyzer(ExerciseAnalyzer):
             "secondary": hip_angle,
             "knee_angle": knee_angle,
             "hip_angle": hip_angle,
+            "torso_offset_angle": torso_offset_angle,
+            "foot_pitch_angle": foot_pitch_angle,
+            "side_confidence": side_confidence,
+            "opposite_side_confidence": opposite_side_confidence,
         }
 
     def _choose_tracking_side(self, landmarks):
@@ -537,6 +570,16 @@ class SquatAnalyzer(ExerciseAnalyzer):
         extra_data = {
             "knee_angle": knee_angle,
             "hip_angle": hip_angle,
+            "tracked_side": self._side_profile_side,
+            "tracked_landmarks": summarize_side_landmarks(
+                rep_analysis["deepest_landmarks"],
+                self._side_profile_side,
+            ) if self._side_profile_side and rep_analysis.get("deepest_landmarks") else {},
+            "tracked_metrics": {
+                key: value
+                for key, value in angles.items()
+                if key not in {"primary", "secondary"}
+            },
         }
         return is_correct, feedback, extra_data
 

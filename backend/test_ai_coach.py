@@ -17,6 +17,21 @@ def _rep_data():
             "descent_seconds": 0.8,
             "ascent_seconds": 0.5,
         },
+        "tracked_side": "right",
+        "tracked_metrics": {
+            "torso_offset_angle": 8.2,
+            "foot_pitch_angle": 12.6,
+            "side_confidence": 0.91,
+            "opposite_side_confidence": 0.42,
+        },
+        "tracked_landmarks": {
+            "shoulder": {"visibility": 0.9, "presence": 0.95},
+            "hip": {"visibility": 0.92, "presence": 0.93},
+            "knee": {"visibility": 0.88, "presence": 0.9},
+            "ankle": {"visibility": 0.86, "presence": 0.89},
+            "heel": {"visibility": 0.8, "presence": 0.82},
+            "foot_index": {"visibility": 0.78, "presence": 0.81},
+        },
     }
 
 
@@ -62,6 +77,18 @@ class AICoachFeedbackTest(unittest.TestCase):
 
         self.assertLessEqual(len(feedback.split()), MAX_SPOKEN_FEEDBACK_WORDS)
         self.assertTrue(feedback.endswith("."))
+
+    def test_squat_prompt_includes_tracked_details(self):
+        coach = AICoach.__new__(AICoach)
+        coach.exercise = "squat"
+
+        prompt = coach._format_rep_data(_rep_data())
+
+        self.assertIn("side=right", prompt)
+        self.assertIn("torso vertical offset=8.20", prompt)
+        self.assertIn("side-view foot pitch=12.60", prompt)
+        self.assertIn("shoulder confidence=0.90", prompt)
+        self.assertIn("toe-out rotation is unavailable", prompt)
 
 
 if __name__ == "__main__":

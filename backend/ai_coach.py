@@ -19,6 +19,7 @@ When given rep data, provide 1-2 short sentences of helpful, encouraging feedbac
 - Noting rushed descent if under 0.5 seconds
 - Noting bouncing out of the bottom if ascent is under 0.3 seconds
 
+Use the tracked metrics when helpful. Chest position is inferred from torso/hip angles; toe-out rotation is not directly available from this side-view model, so never invent it.
 Keep responses SHORT (under 18 words total) since they will be spoken aloud during exercise.
 Never use bullet points or lists. Speak naturally as a coach would.""",
 
@@ -226,16 +227,53 @@ class AICoach:
         descent_str = f"{descent:.1f}s" if descent is not None else "?"
         ascent_str = f"{ascent:.1f}s" if ascent is not None else "?"
         tempo_str = f"{descent_str} descent, {ascent_str} ascent ({tempo_status})"
+        tracked_details = self._format_squat_tracked_details(rep_data)
 
         return f"""Rep #{rep_data['rep_number']} completed:
 - Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
 - Knee angle at depth: {rep_data.get('knee_angle', 0):.0f} degrees
 - Hip/torso angle at depth: {rep_data.get('hip_angle', 0):.0f} degrees
+- Tracked details: {tracked_details}
 - Tempo: {tempo_str}
 - Mode: {rep_data['mode']}
 - Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
 
 Provide brief coaching feedback for this rep."""
+
+    def _format_squat_tracked_details(self, rep_data: dict) -> str:
+        metrics = rep_data.get("tracked_metrics", {})
+        landmarks = rep_data.get("tracked_landmarks", {})
+        tracked_side = rep_data.get("tracked_side") or "unknown"
+
+        details = [f"side={tracked_side}"]
+        metric_labels = {
+            "torso_offset_angle": "torso vertical offset",
+            "foot_pitch_angle": "side-view foot pitch",
+            "side_confidence": "side confidence",
+            "opposite_side_confidence": "opposite side confidence",
+        }
+        for key, label in metric_labels.items():
+            value = metrics.get(key)
+            if isinstance(value, (int, float)):
+                details.append(f"{label}={value:.2f}")
+
+        if landmarks:
+            confidence_parts = []
+            for joint in ("shoulder", "hip", "knee", "ankle", "heel", "foot_index"):
+                landmark = landmarks.get(joint, {})
+                visibility = landmark.get("visibility")
+                presence = landmark.get("presence")
+                if isinstance(visibility, (int, float)) and isinstance(presence, (int, float)):
+                    confidence_parts.append(
+                        f"{joint} confidence={min(visibility, presence):.2f}"
+                    )
+            if confidence_parts:
+                details.append("; ".join(confidence_parts))
+
+        details.append(
+            "chest is inferred from shoulder-hip-knee and torso offset; toe-out rotation is unavailable"
+        )
+        return "; ".join(details)
 
     def _format_pushup_rep(self, rep_data: dict) -> str:
         tempo = rep_data.get("tempo", {})

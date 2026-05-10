@@ -1,6 +1,11 @@
 import unittest
 
-from analyzer import choose_reliable_squat_side, serialize_landmark, side_profile_confidence
+from analyzer import (
+    choose_reliable_squat_side,
+    serialize_landmark,
+    side_profile_confidence,
+    summarize_side_landmarks,
+)
 
 
 class FakeLandmark:
@@ -54,6 +59,15 @@ class LandmarkSerializationTest(unittest.TestCase):
             choose_reliable_squat_side(landmarks, previous_side="left"),
             "left",
         )
+
+    def test_summarize_side_landmarks_includes_foot_points(self):
+        landmarks = [FakeLandmark() for _ in range(33)]
+
+        summary = summarize_side_landmarks(landmarks, "left")
+
+        self.assertIn("heel", summary)
+        self.assertIn("foot_index", summary)
+        self.assertEqual(summary["foot_index"]["x"], 0.25)
 
 
 if __name__ == "__main__":
