@@ -23,7 +23,7 @@ const String _kAnthropicKey =
 const String _kElevenLabsKey =
     'REDACTED_ELEVENLABS_KEY';
 // Arnold voice ID (free tier). To change: pick another ID from backend/voice.py VOICES dict.
-const String _kElevenLabsVoiceId = '21m00Tcm4TlvDq8ikWAM'; // Rachel (Energetic/Bright)
+const String _kElevenLabsVoiceId = '7GEvpCKf5Nlxqwoji96A'; // Rachel (Energetic/Bright)
 const String _kServerUrl = 'http://172.23.24.211:5001'; // Mac's local IP for iPhone access
 const String _kProvider = 'claude';
 const Duration _kWebCaptureInterval = Duration(milliseconds: 50);
@@ -519,8 +519,8 @@ class _RecordPageState extends State<RecordPage> {
               'text': text,
               'model_id': 'eleven_flash_v2_5',
               'voice_settings': {
-                'stability': 0.35,
-                'similarity_boost': 0.85,
+                'stability': 0.50,
+                'similarity_boost': 0.31,
                 'style': 0.65,
                 'use_speaker_boost': true,
               },
@@ -529,6 +529,7 @@ class _RecordPageState extends State<RecordPage> {
           .timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
         // Use BytesSource which works on both Web and Native (avoids dart:io UnsupportedError on Web)
+        await _audioPlayer.setPlaybackRate(1.08);
         await _audioPlayer.play(BytesSource(response.bodyBytes));
       } else {
         debugPrint('[TTS] ElevenLabs ${response.statusCode}: ${response.body}');
