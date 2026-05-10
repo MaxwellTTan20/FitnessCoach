@@ -90,11 +90,19 @@ Provide short, punchy coaching for this rep."""
         tempo = rep_data.get("tempo", {})
         tempo_str = f"Eccentric {tempo.get('eccentric_ms', 0)}ms, Concentric {tempo.get('concentric_ms', 0)}ms"
 
+        elbow_angle = rep_data.get('elbow_angle', 180)
+        shoulder_angle = rep_data.get('shoulder_angle', 0)
+        body_angle = rep_data.get('body_angle', 180)
+        
+        depth_hint = "Good depth (90° or less)" if elbow_angle <= 90 else "Shallow (Didn't reach 90°)"
+        body_hint = "Good plank alignment" if 150 <= body_angle <= 180 else "Sagging hips or piking"
+        shoulder_hint = "Good arm position" if 15 <= shoulder_angle <= 90 else "Flared elbows"
+
         return f"""Rep #{rep_data['rep_number']} completed:
 - Status: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
-- Elbow angle at bottom: {rep_data.get('elbow_angle', 0):.0f}°
-- Shoulder angle: {rep_data.get('shoulder_angle', 0):.0f}°
-- Body alignment: {rep_data.get('body_angle', 0):.0f}°
+- Elbow angle at bottom: {elbow_angle:.0f}° ({depth_hint})
+- Shoulder angle: {shoulder_angle:.0f}° ({shoulder_hint})
+- Body alignment: {body_angle:.0f}° ({body_hint})
 - Tempo: {tempo_str} ({tempo.get('status', 'Good')})
 - Mode: {rep_data['mode']}
 
@@ -102,7 +110,7 @@ Provide short, punchy coaching for this rep."""
 
     def _get_claude_feedback(self, user_message: str) -> str:
         response = self.client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=100,
             system=self.system_prompt,
             messages=[{"role": "user", "content": user_message}],
