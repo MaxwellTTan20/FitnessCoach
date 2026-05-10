@@ -1,16 +1,17 @@
-# 🏋️ AI Fitness Coach
+# 🦦 Capybara AI Fitness Coach
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
 ![Flutter](https://img.shields.io/badge/Flutter-3.x-blue)
 ![Python](https://img.shields.io/badge/Python-3.9+-yellow)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-An ultra-low latency, AI-powered personal training application. FitnessCoach uses real-time computer vision to track your exercise form and provides instant, personalized voice feedback powered by Large Language Models (Anthropic/OpenAI) and ElevenLabs.
+An ultra-low latency, AI-powered personal training application with built-in gamification. Capybara Coach uses real-time computer vision to track your exercise form and provides instant, personalized voice feedback powered by Large Language Models (Anthropic/OpenAI) and ElevenLabs.
 
 ---
 
 ## ✨ Key Features
 
+- **Gamified Fitness (Feed the Capybara)**: Earn "grass" by completing correct reps with good form! Use your earned grass to feed and unlock up to 10 different Capybara characters in the app's interactive feeder screen.
 - **Real-Time Pose Tracking**: Uses MediaPipe to track 33 body landmarks with zero noticeable delay.
 - **Multi-Exercise Support**: Production-ready form analyzers for:
   - `squat` (Depth, Torso lean)
