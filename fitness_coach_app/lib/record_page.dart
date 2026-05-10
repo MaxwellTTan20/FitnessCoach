@@ -444,7 +444,8 @@ class _RecordPageState extends State<RecordPage> {
             headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
             body: jsonEncode({
               'image': base64Encode(jpegBytes),
-              'include_annotated': true,
+              'include_annotated': !kIsWeb,
+
             }),
           )
           .timeout(const Duration(seconds: 5));
@@ -829,7 +830,7 @@ class _RecordPageState extends State<RecordPage> {
                       fit: StackFit.expand,
                       children: [
                         _buildMainDisplay(),
-                        if (_poseLandmarks.isNotEmpty && !_isProcessing)
+                        if (_poseLandmarks.isNotEmpty)
                           Positioned.fill(
                             child: CustomPaint(
                               painter: _PosePainter(
@@ -1079,15 +1080,7 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   Widget _buildMainDisplay() {
-    // Always show annotated frame while processing (no flash between frames).
-    if (_isProcessing && _annotatedImage != null) {
-      final annotated = Image.memory(
-        _annotatedImage!,
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
-      );
-      return annotated;
-    }
+    // Using native skeleton overlay for performance
 
     if (_initializeControllerFuture != null) {
       return FutureBuilder<void>(
