@@ -22,7 +22,7 @@ load_dotenv()
 
 import cv2
 import numpy as np
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from PIL import Image
 
@@ -298,6 +298,31 @@ def speak():
         return jsonify({"success": True, "text": text})
     except Exception as e:
         print(f"Error in /speak: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/tts", methods=["POST"])
+def text_to_speech():
+    """Return synthesized speech bytes for client-side playback."""
+    try:
+        data = request.get_json()
+        if not data or "text" not in data:
+            return jsonify({"error": "No text provided"}), 400
+
+        text = str(data.get("text", "")).strip()
+        if not text:
+            return jsonify({"error": "No text provided"}), 400
+
+        if not voice_coach:
+            return jsonify({"error": "Voice coach not initialized"}), 500
+
+        audio_bytes = voice_coach.synthesize(text)
+        if not audio_bytes:
+            return jsonify({"error": "No audio returned"}), 502
+
+        return Response(audio_bytes, content_type="audio/mpeg")
+    except Exception as e:
+        print(f"Error in /tts: {e}")
         return jsonify({"error": str(e)}), 500
 
 

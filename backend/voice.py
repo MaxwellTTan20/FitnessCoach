@@ -72,16 +72,22 @@ class VoiceCoach:
         finally:
             self._speech_lock.release()
 
+    def synthesize(self, text: str) -> bytes:
+        if not self.use_elevenlabs or self.client is None:
+            raise RuntimeError("ElevenLabs synthesis is not enabled.")
+
+        audio = self.client.text_to_speech.convert(
+            text=text,
+            voice_id=self.voice_id,
+            model_id=self.model_id,
+            output_format="mp3_22050_32",
+        )
+        return b"".join(audio)
+
     def _speak_elevenlabs(self, text: str) -> None:
         try:
             print(f"[Voice] Speaking with voice_id={self.voice_id!r}: {text[:50]}")
-            audio = self.client.text_to_speech.convert(
-                text=text,
-                voice_id=self.voice_id,
-                model_id=self.model_id,
-                output_format="mp3_44100_128",
-            )
-            audio_bytes = b"".join(audio)
+            audio_bytes = self.synthesize(text)
             if not audio_bytes:
                 print("[Voice] ElevenLabs returned empty audio.")
                 return

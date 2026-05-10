@@ -11,6 +11,8 @@ import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'audio_cue.dart';
+import 'frame_request.dart';
+import 'pose_overlay.dart';
 import 'session_summary.dart';
 import 'user_profile.dart';
 import 'voice_feedback.dart';
@@ -90,15 +92,18 @@ class _RecordPageState extends State<RecordPage> {
   String? _errorMessage;
   final AudioPlayer _audioPlayer = AudioPlayer();
   final AudioPlayer _sfxPlayer = AudioPlayer();
-  final VoiceFeedbackConfig _voiceFeedbackConfig =
-      defaultVoiceFeedbackConfig;
   bool _isSpeaking = false;
 
   bool _isProcessing = false;
+  Timer? _webFrameTimer;
+  DateTime? _lastFrameLogAt;
+  bool _frameInFlight = false;
   int _framesInFlight = 0;
   static const _kMaxFramesInFlight = 2;
+  static const _kWebCaptureInterval = Duration(milliseconds: 80);
   Uint8List? _annotatedImage;
   List<Offset> _poseLandmarks = [];
+  Size? _sourceFrameSize;
   Map<String, dynamic> _stats = {
     'correct_count': 0,
     'incorrect_count': 0,
@@ -235,10 +240,16 @@ class _RecordPageState extends State<RecordPage> {
 
     final wasProcessing = _isProcessing;
     if (_isProcessing) {
-      await _controller?.stopImageStream();
+      _webFrameTimer?.cancel();
+      _webFrameTimer = null;
+      if (!kIsWeb) {
+        await _controller?.stopImageStream();
+      }
       setState(() {
         _isProcessing = false;
         _framesInFlight = 0;
+        _frameInFlight = false;
+        _sourceFrameSize = null;
       });
       await Future.delayed(const Duration(milliseconds: 200));
     }
@@ -247,14 +258,31 @@ class _RecordPageState extends State<RecordPage> {
 
     if (wasProcessing && mounted) {
       setState(() => _isProcessing = true);
-      _controller!.startImageStream(_handleFrame);
+      if (kIsWeb) {
+        _startWebCaptureLoop();
+      } else {
+        _controller!.startImageStream(_handleFrame);
+      }
     }
   }
 
   void _startProcessing() {
     if (_controller == null || !_controller!.value.isInitialized) return;
     setState(() => _isProcessing = true);
-    _controller!.startImageStream(_handleFrame);
+    if (kIsWeb) {
+      _startWebCaptureLoop();
+    } else {
+      _controller!.startImageStream(_handleFrame);
+    }
+  }
+
+  void _startWebCaptureLoop() {
+    _webFrameTimer?.cancel();
+    unawaited(_captureWebFrame());
+    _webFrameTimer = Timer.periodic(
+      _kWebCaptureInterval,
+      (_) => unawaited(_captureWebFrame()),
+    );
   }
 
   // Merges the current live stats into _sessionExerciseStats before a switch or finish.
@@ -289,12 +317,18 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   void _stopProcessing() {
-    _controller?.stopImageStream();
+    _webFrameTimer?.cancel();
+    _webFrameTimer = null;
+    if (!kIsWeb) {
+      _controller?.stopImageStream();
+    }
     setState(() {
       _isProcessing = false;
       _framesInFlight = 0;
+      _frameInFlight = false;
       _annotatedImage = null;
       _poseLandmarks = [];
+      _sourceFrameSize = null;
       // _stats kept intentionally — Stop preserves rep counts.
       // Backend also keeps state so Start resumes where we left off.
     });
@@ -322,9 +356,18 @@ class _RecordPageState extends State<RecordPage> {
           'stride=${cameraImage.planes[0].bytesPerRow} '
           'planes=${cameraImage.planes.length}');
     }
-    if (_framesInFlight >= _kMaxFramesInFlight || !_isProcessing || !mounted) return;
+    if (_framesInFlight >= _kMaxFramesInFlight ||
+        _frameInFlight ||
+        !_isProcessing ||
+        !mounted) {
+      return;
+    }
     _framesInFlight++;
-    _processFrame(cameraImage).whenComplete(() => _framesInFlight--);
+    _frameInFlight = true;
+    _processFrame(cameraImage).whenComplete(() {
+      _framesInFlight--;
+      _frameInFlight = false;
+    });
   }
 
   Future<void> _processFrame(CameraImage cameraImage) async {
@@ -342,11 +385,60 @@ class _RecordPageState extends State<RecordPage> {
 
       if (!mounted || !_isProcessing) return;
 
+      await _sendJpegFrame(jpegBytes);
+    } catch (_) {
+      // Network errors; keep the stream going.
+    }
+  }
+
+  Future<void> _captureWebFrame() async {
+    if (_frameInFlight || !_isProcessing || !mounted || _controller == null) {
+      return;
+    }
+    _frameInFlight = true;
+    final frameStartedAt = DateTime.now();
+    try {
+      final file = await _controller!.takePicture();
+      final captureMs = DateTime.now().difference(frameStartedAt).inMilliseconds;
+      final bytes = await file.readAsBytes();
+      if (!mounted || !_isProcessing) return;
+
+      final networkStartedAt = DateTime.now();
+      await _sendJpegFrame(bytes);
+      final totalMs = DateTime.now().difference(frameStartedAt).inMilliseconds;
+      final networkMs = DateTime.now().difference(networkStartedAt).inMilliseconds;
+      _logFrameTiming(
+        'web capture=${captureMs}ms network=${networkMs}ms total=${totalMs}ms',
+      );
+    } catch (e) {
+      if (mounted && _isProcessing) {
+        setState(() {
+          _backendStatus = 'Frame capture failed: $e';
+        });
+      }
+    } finally {
+      if (mounted) _frameInFlight = false;
+    }
+  }
+
+  void _logFrameTiming(String message) {
+    final now = DateTime.now();
+    final last = _lastFrameLogAt;
+    if (last != null && now.difference(last).inSeconds < 2) return;
+    _lastFrameLogAt = now;
+    debugPrint('Frame timing: $message');
+  }
+
+  Future<void> _sendJpegFrame(Uint8List jpegBytes) async {
+    try {
       final response = await http
           .post(
             Uri.parse('$_serverUrl/process_frame'),
             headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-            body: jsonEncode({'image': base64Encode(jpegBytes)}),
+            body: jsonEncode({
+              'image': base64Encode(jpegBytes),
+              'include_annotated': shouldRequestAnnotatedFrame(isWeb: kIsWeb),
+            }),
           )
           .timeout(const Duration(seconds: 5));
 
@@ -354,9 +446,11 @@ class _RecordPageState extends State<RecordPage> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final annotatedBytes = base64Decode(data['annotated_image'] as String);
+        final annotatedImage = data['annotated_image'];
         final newStats = data['stats'] as Map<String, dynamic>;
         final landmarksJson = (data['landmarks'] as List<dynamic>?) ?? [];
+        final frameWidth = (data['frame_width'] as num?)?.toDouble();
+        final frameHeight = (data['frame_height'] as num?)?.toDouble();
 
         final landmarks = landmarksJson.map<Offset>((raw) {
           final lm = raw as Map<String, dynamic>;
@@ -386,9 +480,14 @@ class _RecordPageState extends State<RecordPage> {
           }
 
           setState(() {
-            _annotatedImage = annotatedBytes;
+            if (annotatedImage is String) {
+              _annotatedImage = base64Decode(annotatedImage);
+            }
             _stats = newStats;
             _poseLandmarks = landmarks;
+            if (frameWidth != null && frameHeight != null) {
+              _sourceFrameSize = Size(frameWidth, frameHeight);
+            }
           });
           _checkGoals();
         }
@@ -413,24 +512,20 @@ class _RecordPageState extends State<RecordPage> {
 
   Future<void> _speakFeedback(String text) async {
     if (text.isEmpty || _isSpeaking) return;
-    if (!_voiceFeedbackConfig.isEnabled) {
-      debugPrint('[TTS] ELEVENLABS_KEY not configured; skipping speech.');
-      return;
-    }
     _isSpeaking = true;
     try {
       final response = await http
           .post(
-            _voiceFeedbackConfig.streamingUri,
-            headers: _voiceFeedbackConfig.headers,
-            body: jsonEncode(_voiceFeedbackConfig.payloadFor(text)),
+            backendTextToSpeechUri(_serverUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(backendTextToSpeechPayload(text)),
           )
           .timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
         await _audioPlayer.setPlaybackRate(1.08);
         await _audioPlayer.play(BytesSource(response.bodyBytes));
       } else {
-        debugPrint('[TTS] ElevenLabs ${response.statusCode}: ${response.body}');
+        debugPrint('[TTS] Backend ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
       debugPrint('[TTS] Error: $e');
@@ -730,11 +825,16 @@ class _RecordPageState extends State<RecordPage> {
                       fit: StackFit.expand,
                       children: [
                         _buildMainDisplay(),
-                        if (_poseLandmarks.isNotEmpty && !_isProcessing)
+                        if (shouldShowPoseOverlay(
+                          hasLandmarks: _poseLandmarks.isNotEmpty,
+                          isProcessing: _isProcessing,
+                        ))
                           Positioned.fill(
                             child: CustomPaint(
                               painter: _PosePainter(
-                                  poseLandmarks: _poseLandmarks),
+                                poseLandmarks: _poseLandmarks,
+                                sourceFrameSize: _sourceFrameSize,
+                              ),
                             ),
                           ),
                         Positioned(
@@ -1126,8 +1226,12 @@ class _Badge extends StatelessWidget {
 
 class _PosePainter extends CustomPainter {
   final List<Offset> poseLandmarks;
+  final Size? sourceFrameSize;
 
-  const _PosePainter({required this.poseLandmarks});
+  const _PosePainter({
+    required this.poseLandmarks,
+    required this.sourceFrameSize,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1146,24 +1250,37 @@ class _PosePainter extends CustomPainter {
       final ei = conn[1];
       if (si < poseLandmarks.length && ei < poseLandmarks.length) {
         canvas.drawLine(
-          Offset(poseLandmarks[si].dx * size.width,
-              poseLandmarks[si].dy * size.height),
-          Offset(poseLandmarks[ei].dx * size.width,
-              poseLandmarks[ei].dy * size.height),
+          _mapLandmark(poseLandmarks[si], size),
+          _mapLandmark(poseLandmarks[ei], size),
           linePaint,
         );
       }
     }
 
     for (final lm in poseLandmarks) {
-      canvas.drawCircle(
-          Offset(lm.dx * size.width, lm.dy * size.height), 5, dotPaint);
+      canvas.drawCircle(_mapLandmark(lm, size), 5, dotPaint);
     }
+  }
+
+  Offset _mapLandmark(Offset landmark, Size destinationSize) {
+    final sourceSize = sourceFrameSize;
+    if (sourceSize == null) {
+      return Offset(
+        landmark.dx * destinationSize.width,
+        landmark.dy * destinationSize.height,
+      );
+    }
+    return mapNormalizedPointToCover(
+      normalizedPoint: landmark,
+      sourceSize: sourceSize,
+      destinationSize: destinationSize,
+    );
   }
 
   @override
   bool shouldRepaint(covariant _PosePainter old) =>
-      old.poseLandmarks != poseLandmarks;
+      old.poseLandmarks != poseLandmarks ||
+      old.sourceFrameSize != sourceFrameSize;
 }
 
 // ── Goal ring ─────────────────────────────────────────────────────────────────

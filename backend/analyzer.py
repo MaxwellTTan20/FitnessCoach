@@ -32,6 +32,16 @@ MIN_REP_BUFFER_FRAMES = 6
 MIN_REP_DURATION_SECONDS = 0.35
 
 
+def serialize_landmark(landmark):
+    return {
+        "x": float(landmark.x),
+        "y": float(landmark.y),
+        "z": float(getattr(landmark, "z", 0.0)),
+        "visibility": float(getattr(landmark, "visibility", 0.0)),
+        "presence": float(getattr(landmark, "presence", 0.0)),
+    }
+
+
 class ExerciseAnalyzer:
     """
     Base class for exercise form analyzers using MediaPipe pose estimation.
@@ -142,10 +152,7 @@ class ExerciseAnalyzer:
         self.last_detection_time = time.time()
         self._missing_pose_started_at = None
         landmarks = results.pose_landmarks[0]
-        self.last_pose_landmarks = [
-            {"x": float(lm.x), "y": float(lm.y), "z": float(getattr(lm, "z", 0.0))}
-            for lm in landmarks
-        ]
+        self.last_pose_landmarks = [serialize_landmark(lm) for lm in landmarks]
 
         self._draw_landmarks(frame, landmarks, w, h)
 
