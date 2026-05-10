@@ -14,22 +14,22 @@ INACTIVE_THRESH = 15.0
 # State machine: enter "squatting" when knee < active_angle_low, exit when knee > active_angle_high.
 SQUAT_THRESHOLDS = {
     "beginner": {
-        "active_angle_low": 90,     # enter squatting state
-        "active_angle_high": 160,   # exit squatting state
+        "active_angle_low": 125,    # enter squatting state
+        "active_angle_high": 155,   # exit squatting state
         "knee_angle_correct": 75,   # rep is deep enough only if deepest knee angle <= this
         "hip_angle_low": 50,        # shoulder-hip-knee torso lean range
         "hip_angle_high": 120,
-        "min_descent_seconds": 0.3, # descent faster than this = rushed
-        "min_ascent_seconds": 0.1,  # ascent faster than this = bounced
+        "min_descent_seconds": 0.5, # descent faster than this = rushed
+        "min_ascent_seconds": 0.3,  # ascent faster than this = bounced
     },
     "pro": {
-        "active_angle_low": 80,
-        "active_angle_high": 160,
+        "active_angle_low": 115,
+        "active_angle_high": 155,
         "knee_angle_correct": 60,
         "hip_angle_low": 30,
         "hip_angle_high": 110,
-        "min_descent_seconds": 0.4,
-        "min_ascent_seconds": 0.1,
+        "min_descent_seconds": 0.6,
+        "min_ascent_seconds": 0.3,
     },
 }
 
@@ -62,55 +62,6 @@ PUSHUP_THRESHOLDS = {
     },
 }
 
-# --- Deadlift thresholds ---
-# Primary angle: shoulder-hip-knee (hip hinge).
-# State machine: enter "pulling" when hip < active_angle_low, exit when hip > active_angle_high.
-DEADLIFT_THRESHOLDS = {
-    "beginner": {
-        "active_angle_low": 120,    # enter pulling state
-        "active_angle_high": 160,   # exit pulling state (rep complete)
-        "hip_angle_correct": 80,    # must hinge to at least this deep at bottom
-        "min_descent_seconds": 0.5,
-        "min_ascent_seconds": 0.3,
-    },
-    "pro": {
-        "active_angle_low": 110,
-        "active_angle_high": 155,
-        "hip_angle_correct": 65,
-        "min_descent_seconds": 0.6,
-        "min_ascent_seconds": 0.4,
-    },
-}
-
-# --- Bench press thresholds ---
-# Primary angle: shoulder-elbow-wrist (elbow bend).
-# Secondary angle: shoulder-hip-ankle (body flatness on bench).
-# Tertiary angle: hip-shoulder-elbow (elbow flare / glenohumeral position).
-BENCH_THRESHOLDS = {
-    "beginner": {
-        "active_angle_low": 110,       # enter "down" state
-        "active_angle_high": 145,      # exit "down" state (rep complete)
-        "elbow_angle_correct": 90,     # must lower to 90° or below
-        "body_alignment_low": 150,     # shoulder-hip-ankle flat-on-bench range
-        "body_alignment_high": 180,
-        "shoulder_angle_low": 20,      # hip-shoulder-elbow elbow flare range
-        "shoulder_angle_high": 90,
-        "min_descent_seconds": 0.4,
-        "min_ascent_seconds": 0.3,
-    },
-    "pro": {
-        "active_angle_low": 100,
-        "active_angle_high": 145,
-        "elbow_angle_correct": 75,
-        "body_alignment_low": 155,
-        "body_alignment_high": 180,
-        "shoulder_angle_low": 15,
-        "shoulder_angle_high": 85,
-        "min_descent_seconds": 0.5,
-        "min_ascent_seconds": 0.35,
-    },
-}
-
 # --- Rep buffer window thresholds ---
 # These control when the trajectory buffer starts/stops capturing frames.
 # Separate from the state machine thresholds above.
@@ -122,14 +73,6 @@ BUFFER_KNEE_END = 170.0     # stop buffering when knee angle rises above this (a
 # Push-up buffer
 BUFFER_PUSHUP_START = 155.0  # start buffering when elbow angle drops below this
 BUFFER_PUSHUP_END = 160.0    # stop buffering when elbow angle rises above this (after rep)
-
-# Deadlift buffer (hip angle drops as they hinge forward)
-BUFFER_DEADLIFT_START = 165.0  # start buffering when hip angle drops below this
-BUFFER_DEADLIFT_END = 170.0    # stop buffering when hip angle rises above this
-
-# Bench buffer (elbow angle drops as bar descends)
-BUFFER_BENCH_START = 155.0   # start buffering when elbow angle drops below this
-BUFFER_BENCH_END = 160.0     # stop buffering when elbow angle rises above this
 
 # If buffering for this many seconds without entering the active state, discard.
 BUFFER_TIMEOUT_SECONDS = 5.0

@@ -26,6 +26,7 @@ const String _kElevenLabsKey =
 const String _kElevenLabsVoiceId = 'VR6AewLTigWG4xSOukaG';
 const String _kServerUrl = 'http://172.23.24.211:5001'; // Mac's local IP for iPhone access
 const String _kProvider = 'claude';
+const Duration _kWebCaptureInterval = Duration(milliseconds: 50);
 
 // Passed to the background isolate for JPEG encoding.
 class _EncodeParams {
@@ -92,8 +93,10 @@ class _RecordPageState extends State<RecordPage> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final AudioPlayer _sfxPlayer = AudioPlayer(); // Instant feedback player
   bool _isSpeaking = false;
-
   bool _isProcessing = false;
+  Timer? _webFrameTimer;
+  DateTime? _lastFrameLogAt;
+  bool _frameInFlight = false;
   int _framesInFlight = 0;
   static const _kMaxFramesInFlight = 2;
   Uint8List? _annotatedImage;
@@ -244,10 +247,15 @@ class _RecordPageState extends State<RecordPage> {
 
     final wasProcessing = _isProcessing;
     if (_isProcessing) {
-      await _controller?.stopImageStream();
+      _webFrameTimer?.cancel();
+      _webFrameTimer = null;
+      if (!kIsWeb) {
+        await _controller?.stopImageStream();
+      }
       setState(() {
         _isProcessing = false;
         _framesInFlight = 0;
+        _frameInFlight = false;
       });
       await Future.delayed(const Duration(milliseconds: 200));
     }
@@ -256,14 +264,32 @@ class _RecordPageState extends State<RecordPage> {
 
     if (wasProcessing && mounted) {
       setState(() => _isProcessing = true);
-      _controller!.startImageStream(_handleFrame);
+      if (kIsWeb) {
+        _startWebCaptureLoop();
+      } else {
+        _controller!.startImageStream(_handleFrame);
+      }
     }
   }
 
   void _startProcessing() {
     if (_controller == null || !_controller!.value.isInitialized) return;
+    if (kIsWeb) {
+      setState(() => _isProcessing = true);
+      _startWebCaptureLoop();
+      return;
+    }
     setState(() => _isProcessing = true);
     _controller!.startImageStream(_handleFrame);
+  }
+
+  void _startWebCaptureLoop() {
+    _webFrameTimer?.cancel();
+    _captureWebFrame();
+    _webFrameTimer = Timer.periodic(
+      _kWebCaptureInterval,
+      (_) => _captureWebFrame(),
+    );
   }
 
   // Merges the current live stats into _sessionExerciseStats before a switch or finish.
@@ -298,10 +324,15 @@ class _RecordPageState extends State<RecordPage> {
   }
 
   void _stopProcessing() {
-    _controller?.stopImageStream();
+    _webFrameTimer?.cancel();
+    _webFrameTimer = null;
+    if (!kIsWeb) {
+      _controller?.stopImageStream();
+    }
     setState(() {
       _isProcessing = false;
       _framesInFlight = 0;
+      _frameInFlight = false;
       _annotatedImage = null;
       _poseLandmarks = [];
       // _stats kept intentionally — Stop preserves rep counts.
@@ -331,9 +362,13 @@ class _RecordPageState extends State<RecordPage> {
           'stride=${cameraImage.planes[0].bytesPerRow} '
           'planes=${cameraImage.planes.length}');
     }
-    if (_framesInFlight >= _kMaxFramesInFlight || !_isProcessing || !mounted) return;
+    if (_framesInFlight >= _kMaxFramesInFlight || _frameInFlight || !_isProcessing || !mounted) return;
     _framesInFlight++;
-    _processFrame(cameraImage).whenComplete(() => _framesInFlight--);
+    _frameInFlight = true;
+    _processFrame(cameraImage).whenComplete(() {
+      _framesInFlight--;
+      _frameInFlight = false;
+    });
   }
 
   Future<void> _processFrame(CameraImage cameraImage) async {
@@ -351,11 +386,66 @@ class _RecordPageState extends State<RecordPage> {
 
       if (!mounted || !_isProcessing) return;
 
+      await _sendJpegFrame(jpegBytes);
+    } catch (_) {
+      // Network errors; keep the stream going.
+    }
+  }
+
+  Future<void> _captureWebFrame() async {
+    if (_frameInFlight || !_isProcessing || !mounted || _controller == null) {
+      return;
+    }
+    _frameInFlight = true;
+    final frameStartedAt = DateTime.now();
+    try {
+      final file = await _controller!.takePicture();
+      final captureMs = DateTime.now()
+          .difference(frameStartedAt)
+          .inMilliseconds;
+      final bytes = await file.readAsBytes();
+      final readMs =
+          DateTime.now().difference(frameStartedAt).inMilliseconds - captureMs;
+      if (!mounted || !_isProcessing) return;
+      final networkStartedAt = DateTime.now();
+      await _sendJpegFrame(bytes);
+      final totalMs = DateTime.now().difference(frameStartedAt).inMilliseconds;
+      final networkMs = DateTime.now()
+          .difference(networkStartedAt)
+          .inMilliseconds;
+      _logFrameTiming(
+        'web capture=${captureMs}ms read=${readMs}ms '
+        'network=${networkMs}ms total=${totalMs}ms',
+      );
+    } catch (e) {
+      if (mounted && _isProcessing) {
+        setState(() {
+          _backendStatus = 'Frame capture failed: $e';
+        });
+      }
+    } finally {
+      if (mounted) _frameInFlight = false;
+    }
+  }
+
+  void _logFrameTiming(String message) {
+    final now = DateTime.now();
+    final last = _lastFrameLogAt;
+    if (last != null && now.difference(last).inSeconds < 2) return;
+    _lastFrameLogAt = now;
+    debugPrint('📷 frame timing: $message');
+  }
+
+  Future<void> _sendJpegFrame(Uint8List jpegBytes) async {
+    try {
       final response = await http
           .post(
             Uri.parse('$_serverUrl/process_frame'),
             headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
-            body: jsonEncode({'image': base64Encode(jpegBytes)}),
+            body: jsonEncode({
+              'image': base64Encode(jpegBytes),
+              'include_annotated': !kIsWeb,
+            }),
           )
           .timeout(const Duration(seconds: 5));
 
@@ -363,9 +453,11 @@ class _RecordPageState extends State<RecordPage> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final annotatedBytes = base64Decode(data['annotated_image'] as String);
+        final annotatedImage = data['annotated_image'];
         final newStats = data['stats'] as Map<String, dynamic>;
         final landmarksJson = (data['landmarks'] as List<dynamic>?) ?? [];
+        final aiFeedback = (data['ai_feedback'] as String?) ?? '';
+
 
         final landmarks = landmarksJson.map<Offset>((raw) {
           final lm = raw as Map<String, dynamic>;
@@ -375,23 +467,24 @@ class _RecordPageState extends State<RecordPage> {
           );
         }).toList();
 
-          if (mounted) {
-            // Instant Audio Cue (Ding!)
-            final int oldCorrect = (_stats['correct_count'] as num? ?? 0).toInt();
-            final int newCorrect = (newStats['correct_count'] as num? ?? 0).toInt();
-            if (newCorrect > oldCorrect) {
-              _sfxPlayer.play(AssetSource('audio/ding.aiff'));
-            }
-
-            setState(() {
-              _annotatedImage = annotatedBytes;
-              _stats = newStats;
-              _poseLandmarks = landmarks;
-            });
-            _checkGoals();
+        if (mounted) {
+          // Instant Audio Cue (Ding!)
+          final int oldCorrect = (_stats['correct_count'] as num? ?? 0).toInt();
+          final int newCorrect = (newStats['correct_count'] as num? ?? 0).toInt();
+          if (newCorrect > oldCorrect) {
+            _sfxPlayer.play(AssetSource('audio/ding.aiff'));
           }
 
-        final aiFeedback = data['ai_feedback'] as String? ?? '';
+          setState(() {
+            if (annotatedImage is String) {
+              _annotatedImage = base64Decode(annotatedImage);
+            }
+            _stats = newStats;
+            _poseLandmarks = landmarks;
+          });
+          _checkGoals();
+        }
+
         if (aiFeedback.isNotEmpty) {
           _speakFeedback(aiFeedback);
         }
@@ -587,7 +680,8 @@ class _RecordPageState extends State<RecordPage> {
 
   @override
   void dispose() {
-    if (_isProcessing) _controller?.stopImageStream();
+    _webFrameTimer?.cancel();
+    if (_isProcessing && !kIsWeb) _controller?.stopImageStream();
     _controller?.dispose();
     _audioPlayer.dispose();
     _sfxPlayer.dispose();

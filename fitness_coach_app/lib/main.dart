@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'firebase_options.dart';
 
 import 'auth_page.dart';
+import 'auth_service.dart';
 import 'capybara_feeder.dart';
 import 'profile.dart';
 import 'record_page.dart';
@@ -16,10 +17,26 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await AppProfile.instance.load();
+  await _restoreAuthSession();
   if (AppProfile.instance.auth0UserId != null) {
     await AppProfile.instance.loadFromFirestore();
   }
   runApp(const MainApp());
+}
+
+Future<void> _restoreAuthSession() async {
+  try {
+    final session = await AppAuthService.instance.restoreSession();
+    if (session == null) return;
+    final profile = AppProfile.instance;
+    profile.isGuest = false;
+    profile.auth0UserId = session.userId;
+    profile.email = session.email;
+    if (session.name != null) profile.name = session.name!;
+    await profile.save();
+  } catch (e) {
+    debugPrint('[Auth] Restore skipped: $e');
+  }
 }
 
 class MainApp extends StatelessWidget {
