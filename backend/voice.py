@@ -27,13 +27,19 @@ class VoiceCoach:
     def __init__(
         self,
         api_key: str | None = None,
-        voice_id: str = "arnold",
+        voice_id: str = "josh",
         model_id: str = "eleven_flash_v2_5",
         use_elevenlabs: bool = True,
+        stability: float = 0.4,
+        similarity_boost: float = 0.8,
+        style: float = 0.6,
     ):
         self.use_elevenlabs = use_elevenlabs
         self.voice_id = voice_id
         self.model_id = model_id
+        self.stability = stability
+        self.similarity_boost = similarity_boost
+        self.style = style
         self._speech_lock = threading.Lock()
 
         if use_elevenlabs:
@@ -80,6 +86,12 @@ class VoiceCoach:
                 voice_id=self.voice_id,
                 model_id=self.model_id,
                 output_format="mp3_44100_128",
+                voice_settings={
+                    "stability": self.stability,
+                    "similarity_boost": self.similarity_boost,
+                    "style": self.style,
+                    "use_speaker_boost": True,
+                },
             )
             audio_bytes = b"".join(audio)
             if not audio_bytes:

@@ -92,7 +92,7 @@ def configure_voice_coach():
 
     use_elevenlabs = os.environ.get("USE_ELEVENLABS_VOICE", "true").lower() not in {"0", "false", "no", "off"}
     api_key = os.environ.get("ELEVENLABS_API_KEY")
-    voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "arnold")
+    voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "josh")
     model_id = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_flash_v2_5")
 
     if not use_elevenlabs:
