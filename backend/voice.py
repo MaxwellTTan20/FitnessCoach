@@ -3,6 +3,7 @@ Voice module - backend TTS using ElevenLabs or macOS say fallback.
 """
 import os
 import subprocess
+import tempfile
 import threading
 
 MACOS_VOICES = ["samantha", "alex", "victoria", "karen", "daniel"]
@@ -27,10 +28,12 @@ class VoiceCoach:
         self,
         api_key: str | None = None,
         voice_id: str = "arnold",
+        model_id: str = "eleven_flash_v2_5",
         use_elevenlabs: bool = True,
     ):
         self.use_elevenlabs = use_elevenlabs
         self.voice_id = voice_id
+        self.model_id = model_id
         self._speech_lock = threading.Lock()
 
         if use_elevenlabs:
@@ -71,14 +74,41 @@ class VoiceCoach:
 
     def _speak_elevenlabs(self, text: str) -> None:
         try:
-            from elevenlabs.play import play
             print(f"[Voice] Speaking with voice_id={self.voice_id!r}: {text[:50]}")
             audio = self.client.text_to_speech.convert(
                 text=text,
                 voice_id=self.voice_id,
-                model_id="eleven_turbo_v2_5",
+                model_id=self.model_id,
+                output_format="mp3_44100_128",
             )
-            play(audio)
+            audio_bytes = b"".join(audio)
+            if not audio_bytes:
+                print("[Voice] ElevenLabs returned empty audio.")
+                return
+
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as audio_file:
+                audio_file.write(audio_bytes)
+                audio_path = audio_file.name
+            try:
+                result = subprocess.run(
+                    ["afplay", audio_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    print(f"[Voice] Played ElevenLabs audio ({len(audio_bytes)} bytes).")
+                else:
+                    print(
+                        "[Voice] afplay failed: "
+                        f"code={result.returncode} stderr={result.stderr.strip()}"
+                    )
+            finally:
+                try:
+                    os.remove(audio_path)
+                except OSError:
+                    pass
         except Exception as e:
             print(f"[Voice] ElevenLabs error: {e}")
 

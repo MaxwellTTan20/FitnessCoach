@@ -14,8 +14,8 @@ INACTIVE_THRESH = 15.0
 # State machine: enter "squatting" when knee < active_angle_low, exit when knee > active_angle_high.
 SQUAT_THRESHOLDS = {
     "beginner": {
-        "active_angle_low": 90,     # enter squatting state
-        "active_angle_high": 160,   # exit squatting state
+        "active_angle_low": 125,    # enter squatting state
+        "active_angle_high": 155,   # exit squatting state
         "knee_angle_correct": 75,   # rep is deep enough only if deepest knee angle <= this
         "hip_angle_low": 50,        # shoulder-hip-knee torso lean range
         "hip_angle_high": 120,
@@ -23,8 +23,8 @@ SQUAT_THRESHOLDS = {
         "min_ascent_seconds": 0.3,  # ascent faster than this = bounced
     },
     "pro": {
-        "active_angle_low": 80,
-        "active_angle_high": 160,
+        "active_angle_low": 115,
+        "active_angle_high": 155,
         "knee_angle_correct": 60,
         "hip_angle_low": 30,
         "hip_angle_high": 110,

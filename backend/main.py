@@ -15,6 +15,7 @@ import io
 import os
 import socket
 import threading
+import time
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -36,6 +37,7 @@ analyzer = None
 ai_coach = None
 voice_coach = None
 _pending_ai_feedback = ""
+_latest_rep_number = 0
 current_exercise = "squat"
 current_mode = "beginner"
 
@@ -83,6 +85,7 @@ def configure_voice_coach():
     use_elevenlabs = os.environ.get("USE_ELEVENLABS_VOICE", "true").lower() not in {"0", "false", "no", "off"}
     api_key = os.environ.get("ELEVENLABS_API_KEY")
     voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "arnold")
+    model_id = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_flash_v2_5")
 
     if not use_elevenlabs:
         voice_id = os.environ.get("MACOS_VOICE", "samantha")
@@ -93,7 +96,14 @@ def configure_voice_coach():
         voice_id = os.environ.get("MACOS_VOICE", "samantha")
 
     try:
-        voice_coach = VoiceCoach(api_key=api_key, voice_id=voice_id, use_elevenlabs=use_elevenlabs)
+        voice_coach = VoiceCoach(
+            api_key=api_key,
+            voice_id=voice_id,
+            model_id=model_id,
+            use_elevenlabs=use_elevenlabs,
+        )
+        provider = "ElevenLabs" if use_elevenlabs else "macOS say"
+        print(f"[Voice] Initialized {provider} voice with model {model_id}.")
     except Exception as e:
         print(f"[Voice] Could not initialize voice coach: {e}")
         voice_coach = None
@@ -101,11 +111,33 @@ def configure_voice_coach():
 
 def create_feedback_callback():
     def on_rep_complete(rep_data):
+        global _latest_rep_number
+        rep_number = rep_data.get("rep_number", 0)
+        _latest_rep_number = max(_latest_rep_number, rep_number)
+
         def process_feedback():
             global _pending_ai_feedback, ai_coach, voice_coach
             try:
+                tempo = rep_data.get("tempo", {})
+                print(
+                    "[Rep] "
+                    f"#{rep_data.get('rep_number')} "
+                    f"correct={rep_data.get('is_correct')} "
+                    f"knee={rep_data.get('knee_angle', 0):.0f} "
+                    f"hip={rep_data.get('hip_angle', 0):.0f} "
+                    f"tempo={tempo.get('status')} "
+                    f"descent={tempo.get('descent_seconds')} "
+                    f"ascent={tempo.get('ascent_seconds')}",
+                    flush=True,
+                )
                 if ai_coach:
                     feedback = ai_coach.get_feedback(rep_data)
+                    if rep_number < _latest_rep_number:
+                        print(
+                            f"[AI Coach] Dropping stale feedback for rep #{rep_number}",
+                            flush=True,
+                        )
+                        return
                     print(f"[AI Coach] {feedback}")
                     _pending_ai_feedback = feedback
                     if voice_coach:
@@ -123,31 +155,52 @@ def create_feedback_callback():
 @app.route("/process_frame", methods=["POST"])
 def process_frame():
     global _pending_ai_feedback
+    request_started_at = time.perf_counter()
     try:
         data = request.get_json()
         if not data or "image" not in data:
             return jsonify({"error": "No image provided"}), 400
+        include_annotated = data.get("include_annotated", True)
 
+        decode_started_at = time.perf_counter()
         image_data = base64.b64decode(data["image"])
         image = Image.open(io.BytesIO(image_data))
         frame = np.array(image)
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        frame_height, frame_width = frame.shape[:2]
 
+        analysis_started_at = time.perf_counter()
         annotated_frame = analyzer.process_frame(frame)
-        annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
 
-        _, buffer = cv2.imencode(".jpg", annotated_frame_rgb, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        annotated_b64 = base64.b64encode(buffer).decode("utf-8")
+        encode_started_at = time.perf_counter()
+        annotated_b64 = None
+        if include_annotated:
+            annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+            _, buffer = cv2.imencode(".jpg", annotated_frame_rgb, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            annotated_b64 = base64.b64encode(buffer).decode("utf-8")
 
         ai_feedback = _pending_ai_feedback
         _pending_ai_feedback = ""
 
         stats = analyzer.get_stats_for_api()
+        total_ms = int((time.perf_counter() - request_started_at) * 1000)
+        print(
+            "[Frame] "
+            f"total={total_ms}ms "
+            f"decode={int((analysis_started_at - decode_started_at) * 1000)}ms "
+            f"analyze={int((encode_started_at - analysis_started_at) * 1000)}ms "
+            f"encode={int((time.perf_counter() - encode_started_at) * 1000)}ms "
+            f"size={frame_width}x{frame_height} "
+            f"landmarks={len(analyzer.last_pose_landmarks)}",
+            flush=True,
+        )
 
         return jsonify({
             "annotated_image": annotated_b64,
             "stats": stats,
             "landmarks": analyzer.last_pose_landmarks,
+            "frame_width": frame_width,
+            "frame_height": frame_height,
             "ai_feedback": ai_feedback,
         })
 
@@ -240,7 +293,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AI Fitness Coach — Server")
     parser.add_argument("--exercise", choices=list(EXERCISE_CLASSES.keys()), default="squat")
     parser.add_argument("--mode", choices=["beginner", "pro"], default="beginner")
-    parser.add_argument("--port", type=int, default=5000)
+    parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--provider", choices=["claude", "openai"], default="claude")
     parser.add_argument("--anthropic-key", default=None)
     parser.add_argument("--openai-key", default=None)

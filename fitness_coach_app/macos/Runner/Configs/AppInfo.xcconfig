@@ -12,3 +12,12 @@ PRODUCT_BUNDLE_IDENTIFIER = com.example.fitnessCoachApp
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+
+// Include CocoaPods-generated configurations so pods settings are applied
+// path corrected to point to macos/Pods from Runner/Configs
+#include "../../Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
+#include "../../Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+#include "../../Pods/Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"
+
+// Ensure minimum macOS deployment target matches pods (e.g., audioplayers_darwin)
+MACOSX_DEPLOYMENT_TARGET = 11.0

@@ -14,9 +14,9 @@ import 'user_profile.dart';
 
 // --- Config (edit these to change behaviour) ---
 const String _kAnthropicKey = '';
-const String _kServerUrl =
-    'http://127.0.0.1:8080'; // change to your Mac's IP when on a real device
+const String _kServerUrl = 'http://127.0.0.1:8080';
 const String _kProvider = 'claude';
+const Duration _kWebCaptureInterval = Duration(milliseconds: 50);
 
 const List<List<int>> _poseConnections = [
   [0, 1],
@@ -58,7 +58,8 @@ class RecordPage extends StatefulWidget {
   State<RecordPage> createState() => _RecordPageState();
 }
 
-class _RecordPageState extends State<RecordPage> {
+class _RecordPageState extends State<RecordPage>
+    with SingleTickerProviderStateMixin {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
   List<CameraDescription> _cameras = [];
@@ -68,8 +69,13 @@ class _RecordPageState extends State<RecordPage> {
   bool _isProcessing = false;
   bool _frameInFlight = false;
   Timer? _webFrameTimer;
+  DateTime? _lastFrameLogAt;
   Uint8List? _annotatedImage;
   List<Offset> _poseLandmarks = [];
+  Size? _poseFrameSize;
+  late final AnimationController _hudController;
+  String _liveCue = '';
+  int _repPulseToken = 0;
   Map<String, dynamic> _stats = {
     'correct_count': 0,
     'incorrect_count': 0,
@@ -93,6 +99,10 @@ class _RecordPageState extends State<RecordPage> {
   @override
   void initState() {
     super.initState();
+    _hudController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
     _loadSavedServerUrl()
         .then((_) => _initializeCamera())
         .then((_) => _autoConfigureBackend());
@@ -104,8 +114,10 @@ class _RecordPageState extends State<RecordPage> {
     if (saved != null && saved.isNotEmpty) {
       final oldDefaultUrl =
           saved == 'http://localhost:5000' ||
-          saved == 'http://172.23.31.255:5000';
-      final url = kIsWeb && oldDefaultUrl ? _kServerUrl : saved;
+          saved == 'http://127.0.0.1:5001' ||
+          saved == 'http://172.23.31.255:5000' ||
+          saved == 'http://172.23.31.255:5001';
+      final url = oldDefaultUrl ? _kServerUrl : saved;
       if (url != saved) {
         await prefs.setString('server_url', url);
       }
@@ -175,26 +187,6 @@ class _RecordPageState extends State<RecordPage> {
     );
   }
 
-  Future<void> _speakFeedback(String text) async {
-    try {
-      final response = await http
-          .post(
-            Uri.parse('$_serverUrl/speak'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'text': text}),
-          )
-          .timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        debugPrint('📷 Backend TTS succeeded');
-      } else {
-        debugPrint('📷 Backend TTS failed: ${response.statusCode}');
-      }
-    } catch (e) {
-      debugPrint('📷 Backend TTS error: $e');
-    }
-  }
-
   Future<void> _flipCamera() async {
     final newDir = _currentLensDirection == CameraLensDirection.back
         ? CameraLensDirection.front
@@ -202,7 +194,11 @@ class _RecordPageState extends State<RecordPage> {
 
     final wasProcessing = _isProcessing;
     if (_isProcessing) {
-      await _controller?.stopImageStream();
+      _webFrameTimer?.cancel();
+      _webFrameTimer = null;
+      if (!kIsWeb) {
+        await _controller?.stopImageStream();
+      }
       setState(() {
         _isProcessing = false;
         _frameInFlight = false;
@@ -214,7 +210,11 @@ class _RecordPageState extends State<RecordPage> {
 
     if (wasProcessing && mounted) {
       setState(() => _isProcessing = true);
-      _controller!.startImageStream(_handleFrame);
+      if (kIsWeb) {
+        _startWebCaptureLoop();
+      } else {
+        _controller!.startImageStream(_handleFrame);
+      }
     }
   }
 
@@ -233,7 +233,7 @@ class _RecordPageState extends State<RecordPage> {
     _webFrameTimer?.cancel();
     _captureWebFrame();
     _webFrameTimer = Timer.periodic(
-      const Duration(milliseconds: 700),
+      _kWebCaptureInterval,
       (_) => _captureWebFrame(),
     );
   }
@@ -275,6 +275,8 @@ class _RecordPageState extends State<RecordPage> {
       _frameInFlight = false;
       _annotatedImage = null;
       _poseLandmarks = [];
+      _poseFrameSize = null;
+      _liveCue = '';
       _stats = {
         'correct_count': 0,
         'incorrect_count': 0,
@@ -325,15 +327,6 @@ class _RecordPageState extends State<RecordPage> {
     return img.encodeJpg(image, quality: 60);
   }
 
-  Uint8List _resizeJpegForApi(Uint8List jpegBytes) {
-    final image = img.decodeImage(jpegBytes);
-    if (image == null) return jpegBytes;
-    final resized = image.width > 320
-        ? img.copyResize(image, width: 320)
-        : image;
-    return img.encodeJpg(resized, quality: 60);
-  }
-
   bool _didLogFormat = false;
   void _handleFrame(CameraImage cameraImage) {
     if (!_didLogFormat) {
@@ -369,11 +362,26 @@ class _RecordPageState extends State<RecordPage> {
       return;
     }
     _frameInFlight = true;
+    final frameStartedAt = DateTime.now();
     try {
       final file = await _controller!.takePicture();
+      final captureMs = DateTime.now()
+          .difference(frameStartedAt)
+          .inMilliseconds;
       final bytes = await file.readAsBytes();
+      final readMs =
+          DateTime.now().difference(frameStartedAt).inMilliseconds - captureMs;
       if (!mounted || !_isProcessing) return;
-      await _sendJpegFrame(_resizeJpegForApi(bytes));
+      final networkStartedAt = DateTime.now();
+      await _sendJpegFrame(bytes);
+      final totalMs = DateTime.now().difference(frameStartedAt).inMilliseconds;
+      final networkMs = DateTime.now()
+          .difference(networkStartedAt)
+          .inMilliseconds;
+      _logFrameTiming(
+        'web capture=${captureMs}ms read=${readMs}ms '
+        'network=${networkMs}ms total=${totalMs}ms',
+      );
     } catch (e) {
       if (mounted && _isProcessing) {
         setState(() {
@@ -385,6 +393,14 @@ class _RecordPageState extends State<RecordPage> {
     }
   }
 
+  void _logFrameTiming(String message) {
+    final now = DateTime.now();
+    final last = _lastFrameLogAt;
+    if (last != null && now.difference(last).inSeconds < 2) return;
+    _lastFrameLogAt = now;
+    debugPrint('📷 frame timing: $message');
+  }
+
   Future<void> _sendJpegFrame(Uint8List jpegBytes) async {
     try {
       final response = await http
@@ -394,7 +410,10 @@ class _RecordPageState extends State<RecordPage> {
               'Content-Type': 'application/json',
               'ngrok-skip-browser-warning': 'true',
             },
-            body: jsonEncode({'image': base64Encode(jpegBytes)}),
+            body: jsonEncode({
+              'image': base64Encode(jpegBytes),
+              'include_annotated': !kIsWeb,
+            }),
           )
           .timeout(const Duration(seconds: 5));
 
@@ -402,10 +421,12 @@ class _RecordPageState extends State<RecordPage> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final annotatedBytes = base64Decode(data['annotated_image'] as String);
+        final annotatedImage = data['annotated_image'];
         final newStats = data['stats'] as Map<String, dynamic>;
         final landmarksJson = (data['landmarks'] as List<dynamic>?) ?? [];
         final aiFeedback = (data['ai_feedback'] as String?) ?? '';
+        final frameWidth = (data['frame_width'] as num?)?.toDouble();
+        final frameHeight = (data['frame_height'] as num?)?.toDouble();
 
         final landmarks = landmarksJson.map<Offset>((raw) {
           final lm = raw as Map<String, dynamic>;
@@ -417,19 +438,37 @@ class _RecordPageState extends State<RecordPage> {
 
         if (mounted) {
           setState(() {
-            _annotatedImage = annotatedBytes;
+            if (annotatedImage is String) {
+              _annotatedImage = base64Decode(annotatedImage);
+            }
+            final previousTotal =
+                (_stats['correct_count'] as num? ?? 0).toInt() +
+                (_stats['incorrect_count'] as num? ?? 0).toInt();
+            final nextTotal =
+                (newStats['correct_count'] as num? ?? 0).toInt() +
+                (newStats['incorrect_count'] as num? ?? 0).toInt();
+            if (nextTotal > previousTotal) {
+              _repPulseToken++;
+            }
             _stats = newStats;
             _poseLandmarks = landmarks;
+            _poseFrameSize = frameWidth != null && frameHeight != null
+                ? Size(frameWidth, frameHeight)
+                : null;
+            final statsCue = (newStats['current_feedback'] as String?) ?? '';
+            if (aiFeedback.isNotEmpty) {
+              _liveCue = aiFeedback;
+            } else if (statsCue.isNotEmpty) {
+              _liveCue = statsCue;
+            }
           });
         }
 
-        // If there's AI feedback, speak it via the backend TTS endpoint
         if (aiFeedback.isNotEmpty) {
           final preview = aiFeedback.length > 50
               ? '${aiFeedback.substring(0, 50)}...'
               : aiFeedback;
           debugPrint('📷 AI Feedback received: $preview');
-          _speakFeedback(aiFeedback);
         }
       } else {
         setState(() {
@@ -595,6 +634,7 @@ class _RecordPageState extends State<RecordPage> {
   @override
   void dispose() {
     _webFrameTimer?.cancel();
+    _hudController.dispose();
     if (_isProcessing && !kIsWeb) {
       _controller?.stopImageStream();
     }
@@ -718,156 +758,105 @@ class _RecordPageState extends State<RecordPage> {
               ),
               SizedBox(height: isSmall ? 10 : 14),
               Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: MovementLabColors.paper,
-                    border: Border.all(
-                      color: MovementLabColors.graphite,
-                      width: 2,
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x26252420),
-                        blurRadius: 24,
-                        offset: Offset(0, 12),
+                child: AnimatedBuilder(
+                  animation: _hudController,
+                  builder: (context, _) {
+                    final isInRep = _stats['is_in_rep'] as bool? ?? false;
+                    final borderColor = isInRep
+                        ? MovementLabColors.correct
+                        : _isProcessing
+                        ? MovementLabColors.trackTeal
+                        : MovementLabColors.graphite;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      decoration: BoxDecoration(
+                        color: MovementLabColors.paper,
+                        border: Border.all(color: borderColor, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: borderColor.withValues(alpha: 0.18),
+                            blurRadius: _isProcessing ? 30 : 20,
+                            offset: const Offset(0, 12),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        _buildMainDisplay(),
-                        if (_poseLandmarks.isNotEmpty)
-                          Positioned.fill(
-                            child: CustomPaint(
-                              painter: _PosePainter(
-                                poseLandmarks: _poseLandmarks,
+                      child: ClipRRect(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            _buildMainDisplay(),
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: CustomPaint(
+                                  painter: _CaptureHudPainter(
+                                    progress: _hudController.value,
+                                    isProcessing: _isProcessing,
+                                    isInRep: isInRep,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        Positioned(
-                          left: isSmall ? 12 : 20,
-                          top: isSmall ? 12 : 20,
-                          child: _Badge(
-                            icon: Icons.sensors,
-                            label: _isProcessing ? 'Analyzing' : 'Live Feed',
-                            color: _isProcessing
-                                ? MovementLabColors.tealSoft
-                                : MovementLabColors.white,
-                          ),
-                        ),
-                        Positioned(
-                          right: isSmall ? 12 : 20,
-                          top: isSmall ? 12 : 20,
-                          child: Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: isSmall ? 10 : 14,
-                              vertical: isSmall ? 6 : 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: (_stats['is_in_rep'] as bool? ?? false)
-                                  ? MovementLabColors.correctSoft
-                                  : MovementLabColors.white,
-                              border: Border.all(
-                                color: (_stats['is_in_rep'] as bool? ?? false)
-                                    ? MovementLabColors.correct
-                                    : MovementLabColors.lineStrong,
+                            if (_poseLandmarks.isNotEmpty)
+                              Positioned.fill(
+                                child: CustomPaint(
+                                  painter: _PosePainter(
+                                    poseLandmarks: _poseLandmarks,
+                                    sourceSize: _poseFrameSize,
+                                  ),
+                                ),
+                              ),
+                            Positioned(
+                              left: isSmall ? 12 : 20,
+                              top: isSmall ? 12 : 20,
+                              child: _LiveStatusBadge(
+                                isProcessing: _isProcessing,
+                                isInRep: isInRep,
                               ),
                             ),
-                            child: Text(
-                              (_stats['is_in_rep'] as bool? ?? false)
-                                  ? 'In Rep'
-                                  : 'Ready',
-                              style: TextStyle(
-                                color: (_stats['is_in_rep'] as bool? ?? false)
-                                    ? MovementLabColors.correct
-                                    : MovementLabColors.graphite,
-                                fontWeight: FontWeight.w600,
-                                fontSize: isSmall ? 12 : 14,
+                            Positioned(
+                              right: isSmall ? 12 : 20,
+                              top: isSmall ? 12 : 20,
+                              child: _PhaseBadge(
+                                isInRep: isInRep,
+                                label: isInRep ? 'IN REP' : 'READY',
                               ),
                             ),
-                          ),
-                        ),
-                        Positioned(
-                          left: isSmall ? 12 : 20,
-                          bottom: isSmall ? 12 : 20,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _repCountText(
-                                '✓ ${_stats['correct_count']}',
-                                MovementLabColors.correct,
-                                isSmall,
+                            Positioned(
+                              left: isSmall ? 12 : 20,
+                              bottom: isSmall ? 12 : 20,
+                              child: _RepScoreboard(
+                                correct: (_stats['correct_count'] as num? ?? 0)
+                                    .toInt(),
+                                incorrect:
+                                    (_stats['incorrect_count'] as num? ?? 0)
+                                        .toInt(),
+                                pulseToken: _repPulseToken,
+                                isSmall: isSmall,
                               ),
-                              const SizedBox(height: 4),
-                              _repCountText(
-                                '✗ ${_stats['incorrect_count']}',
-                                MovementLabColors.correction,
-                                isSmall,
-                              ),
-                            ],
-                          ),
-                        ),
-                        Positioned(
-                          right: isSmall ? 12 : 20,
-                          bottom: isSmall ? 12 : 20,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              GestureDetector(
+                            ),
+                            Positioned(
+                              right: isSmall ? 12 : 20,
+                              bottom: isSmall ? 12 : 20,
+                              child: _HudIconButton(
+                                icon: Icons.flip_camera_ios,
                                 onTap: _flipCamera,
-                                child: Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: const BoxDecoration(
-                                    color: MovementLabColors.white,
-                                    border: Border.fromBorderSide(
-                                      BorderSide(
-                                        color: MovementLabColors.graphite,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Icon(
-                                    Icons.flip_camera_ios,
-                                    color: MovementLabColors.graphite,
-                                    size: isSmall ? 20 : 24,
-                                  ),
-                                ),
+                                tooltip: 'Flip camera',
                               ),
-                              if ((_stats['current_feedback'] as String?)
-                                      ?.isNotEmpty ==
-                                  true) ...[
-                                const SizedBox(height: 8),
-                                Container(
-                                  constraints: const BoxConstraints(
-                                    maxWidth: 180,
-                                  ),
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: isSmall ? 10 : 14,
-                                    vertical: isSmall ? 8 : 10,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: MovementLabColors.correctionSoft,
-                                    border: Border.all(
-                                      color: MovementLabColors.correction,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    _stats['current_feedback'] as String,
-                                    textAlign: TextAlign.right,
-                                    style: TextStyle(
-                                      color: MovementLabColors.graphite,
-                                      fontSize: isSmall ? 11 : 13,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
+                            ),
+                            Positioned(
+                              left: isSmall ? 12 : 20,
+                              right: isSmall ? 12 : 20,
+                              bottom: isSmall ? 76 : 84,
+                              child: _CueToast(
+                                cue: _liveCue,
+                                isActive: _isProcessing,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
+                    );
+                  },
                 ),
               ),
               SizedBox(height: isSmall ? 10 : 14),
@@ -982,7 +971,6 @@ class _RecordPageState extends State<RecordPage> {
       return _buildCameraPreview();
     }
 
-    // Always show annotated frame while processing (no flash between frames).
     if (_isProcessing && _annotatedImage != null) {
       final annotated = Image.memory(
         _annotatedImage!,
@@ -1052,27 +1040,6 @@ class _RecordPageState extends State<RecordPage> {
       ),
     );
   }
-
-  Widget _repCountText(String text, Color color, bool isSmall) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isSmall ? 8 : 12,
-        vertical: isSmall ? 4 : 6,
-      ),
-      decoration: BoxDecoration(
-        color: MovementLabColors.white,
-        border: Border.all(color: color),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontSize: isSmall ? 14 : 16,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
 }
 
 // ── Widgets ──────────────────────────────────────────────────────────────────
@@ -1127,32 +1094,54 @@ class _StatChip extends StatelessWidget {
   }
 }
 
-class _Badge extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
+class _LiveStatusBadge extends StatelessWidget {
+  final bool isProcessing;
+  final bool isInRep;
 
-  const _Badge({required this.icon, required this.label, required this.color});
+  const _LiveStatusBadge({required this.isProcessing, required this.isInRep});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final label = isInRep
+        ? 'Tracking rep'
+        : isProcessing
+        ? 'Analyzing'
+        : 'Live feed';
+    final icon = isInRep
+        ? Icons.bolt
+        : isProcessing
+        ? Icons.sensors
+        : Icons.videocam_outlined;
+    final accent = isInRep
+        ? MovementLabColors.correct
+        : isProcessing
+        ? MovementLabColors.trackTeal
+        : MovementLabColors.graphite;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color,
-        border: Border.all(color: MovementLabColors.graphite),
+        color: MovementLabColors.white.withValues(alpha: 0.94),
+        border: Border.all(color: accent, width: 1.5),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: MovementLabColors.graphite, size: 16),
+          _PulsingDot(color: accent, active: isProcessing),
+          const SizedBox(width: 8),
+          Icon(icon, color: accent, size: 16),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: MovementLabColors.graphite,
-              fontWeight: FontWeight.w900,
-              fontSize: 13,
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            child: Text(
+              label,
+              key: ValueKey(label),
+              style: const TextStyle(
+                color: MovementLabColors.graphite,
+                fontWeight: FontWeight.w900,
+                fontSize: 13,
+              ),
             ),
           ),
         ],
@@ -1161,10 +1150,387 @@ class _Badge extends StatelessWidget {
   }
 }
 
+class _PulsingDot extends StatelessWidget {
+  final Color color;
+  final bool active;
+
+  const _PulsingDot({required this.color, required this.active});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: active ? 1 : 0),
+      duration: const Duration(milliseconds: 360),
+      builder: (context, value, child) {
+        return Container(
+          width: 8 + (value * 3),
+          height: 8 + (value * 3),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color.withValues(alpha: active ? 0.95 : 0.45),
+            boxShadow: [
+              if (active)
+                BoxShadow(
+                  color: color.withValues(alpha: 0.42),
+                  blurRadius: 12,
+                  spreadRadius: 1 + value,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PhaseBadge extends StatelessWidget {
+  final bool isInRep;
+  final String label;
+
+  const _PhaseBadge({required this.isInRep, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isInRep
+            ? MovementLabColors.correctSoft.withValues(alpha: 0.96)
+            : MovementLabColors.white.withValues(alpha: 0.94),
+        border: Border.all(
+          color: isInRep
+              ? MovementLabColors.correct
+              : MovementLabColors.lineStrong,
+          width: isInRep ? 1.5 : 1,
+        ),
+      ),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 160),
+        child: Text(
+          label,
+          key: ValueKey(label),
+          style: TextStyle(
+            color: isInRep
+                ? MovementLabColors.correct
+                : MovementLabColors.graphite,
+            fontWeight: FontWeight.w900,
+            fontSize: 12,
+            letterSpacing: 0.8,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RepScoreboard extends StatelessWidget {
+  final int correct;
+  final int incorrect;
+  final int pulseToken;
+  final bool isSmall;
+
+  const _RepScoreboard({
+    required this.correct,
+    required this.incorrect,
+    required this.pulseToken,
+    required this.isSmall,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      key: ValueKey(pulseToken),
+      tween: Tween(begin: 1.08, end: 1),
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      builder: (context, scale, child) {
+        return Transform.scale(
+          scale: scale,
+          alignment: Alignment.bottomLeft,
+          child: child,
+        );
+      },
+      child: Container(
+        padding: EdgeInsets.all(isSmall ? 8 : 10),
+        decoration: BoxDecoration(
+          color: MovementLabColors.white.withValues(alpha: 0.94),
+          border: Border.all(color: MovementLabColors.graphite),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ScoreCell(
+              icon: Icons.check,
+              value: correct,
+              color: MovementLabColors.correct,
+              isSmall: isSmall,
+            ),
+            Container(
+              width: 1,
+              height: isSmall ? 24 : 30,
+              margin: const EdgeInsets.symmetric(horizontal: 10),
+              color: MovementLabColors.line,
+            ),
+            _ScoreCell(
+              icon: Icons.close,
+              value: incorrect,
+              color: MovementLabColors.correction,
+              isSmall: isSmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScoreCell extends StatelessWidget {
+  final IconData icon;
+  final int value;
+  final Color color;
+  final bool isSmall;
+
+  const _ScoreCell({
+    required this.icon,
+    required this.value,
+    required this.color,
+    required this.isSmall,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: isSmall ? 16 : 18),
+        const SizedBox(width: 5),
+        Text(
+          '$value',
+          style: TextStyle(
+            color: color,
+            fontSize: isSmall ? 18 : 22,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HudIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final String tooltip;
+
+  const _HudIconButton({
+    required this.icon,
+    required this.onTap,
+    required this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: MovementLabColors.white.withValues(alpha: 0.94),
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              border: Border.all(color: MovementLabColors.graphite),
+            ),
+            child: Icon(icon, color: MovementLabColors.graphite, size: 22),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CueToast extends StatelessWidget {
+  final String cue;
+  final bool isActive;
+
+  const _CueToast({required this.cue, required this.isActive});
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = isActive && cue.trim().isNotEmpty;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.16),
+              end: Offset.zero,
+            ).animate(animation),
+            child: child,
+          ),
+        );
+      },
+      child: visible
+          ? Center(
+              key: ValueKey(cue),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 340),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 13,
+                ),
+                decoration: BoxDecoration(
+                  color: MovementLabColors.graphite.withValues(alpha: 0.92),
+                  border: Border.all(color: MovementLabColors.white, width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.graphic_eq,
+                      color: MovementLabColors.tempo,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Text(
+                        cue,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: MovementLabColors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : const SizedBox.shrink(key: ValueKey('empty-cue')),
+    );
+  }
+}
+
+class _CaptureHudPainter extends CustomPainter {
+  final double progress;
+  final bool isProcessing;
+  final bool isInRep;
+
+  const _CaptureHudPainter({
+    required this.progress,
+    required this.isProcessing,
+    required this.isInRep,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final accent = isInRep
+        ? MovementLabColors.correct
+        : isProcessing
+        ? MovementLabColors.trackTeal
+        : MovementLabColors.lineStrong;
+    final linePaint = Paint()
+      ..color = accent.withValues(alpha: isProcessing ? 0.42 : 0.24)
+      ..strokeWidth = 1;
+    final strongPaint = Paint()
+      ..color = accent.withValues(alpha: isProcessing ? 0.86 : 0.5)
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.square;
+
+    const corner = 30.0;
+    const inset = 12.0;
+    final right = size.width - inset;
+    final bottom = size.height - inset;
+
+    canvas.drawLine(
+      const Offset(inset, inset),
+      const Offset(inset + corner, inset),
+      strongPaint,
+    );
+    canvas.drawLine(
+      const Offset(inset, inset),
+      const Offset(inset, inset + corner),
+      strongPaint,
+    );
+    canvas.drawLine(
+      Offset(right, inset),
+      Offset(right - corner, inset),
+      strongPaint,
+    );
+    canvas.drawLine(
+      Offset(right, inset),
+      Offset(right, inset + corner),
+      strongPaint,
+    );
+    canvas.drawLine(
+      Offset(inset, bottom),
+      Offset(inset + corner, bottom),
+      strongPaint,
+    );
+    canvas.drawLine(
+      Offset(inset, bottom),
+      Offset(inset, bottom - corner),
+      strongPaint,
+    );
+    canvas.drawLine(
+      Offset(right, bottom),
+      Offset(right - corner, bottom),
+      strongPaint,
+    );
+    canvas.drawLine(
+      Offset(right, bottom),
+      Offset(right, bottom - corner),
+      strongPaint,
+    );
+
+    for (double x = inset + 18; x < right; x += 28) {
+      canvas.drawLine(Offset(x, inset), Offset(x, inset + 7), linePaint);
+      canvas.drawLine(Offset(x, bottom), Offset(x, bottom - 7), linePaint);
+    }
+    for (double y = inset + 18; y < bottom; y += 28) {
+      canvas.drawLine(Offset(inset, y), Offset(inset + 7, y), linePaint);
+      canvas.drawLine(Offset(right, y), Offset(right - 7, y), linePaint);
+    }
+
+    if (!isProcessing) return;
+
+    final scanY = inset + ((bottom - inset) * progress);
+    final scanPaint = Paint()
+      ..shader = LinearGradient(
+        colors: [
+          accent.withValues(alpha: 0),
+          accent.withValues(alpha: 0.45),
+          accent.withValues(alpha: 0),
+        ],
+      ).createShader(Rect.fromLTWH(inset, scanY - 20, right - inset, 40));
+    canvas.drawRect(
+      Rect.fromLTWH(inset, scanY - 20, right - inset, 40),
+      scanPaint,
+    );
+    canvas.drawLine(Offset(inset, scanY), Offset(right, scanY), strongPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CaptureHudPainter oldDelegate) =>
+      oldDelegate.progress != progress ||
+      oldDelegate.isProcessing != isProcessing ||
+      oldDelegate.isInRep != isInRep;
+}
+
 class _PosePainter extends CustomPainter {
   final List<Offset> poseLandmarks;
+  final Size? sourceSize;
 
-  const _PosePainter({required this.poseLandmarks});
+  const _PosePainter({required this.poseLandmarks, required this.sourceSize});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1178,34 +1544,46 @@ class _PosePainter extends CustomPainter {
       ..color = MovementLabColors.correction.withValues(alpha: 0.95)
       ..style = PaintingStyle.fill;
 
+    Offset mapLandmark(Offset landmark) {
+      final source = sourceSize;
+      if (source == null || source.width <= 0 || source.height <= 0) {
+        return Offset(landmark.dx * size.width, landmark.dy * size.height);
+      }
+
+      final sourceAspect = source.width / source.height;
+      final targetAspect = size.width / size.height;
+      if (sourceAspect > targetAspect) {
+        final fittedWidth = size.height * sourceAspect;
+        final left = (size.width - fittedWidth) / 2;
+        return Offset(
+          left + landmark.dx * fittedWidth,
+          landmark.dy * size.height,
+        );
+      }
+
+      final fittedHeight = size.width / sourceAspect;
+      final top = (size.height - fittedHeight) / 2;
+      return Offset(landmark.dx * size.width, top + landmark.dy * fittedHeight);
+    }
+
     for (final conn in _poseConnections) {
       final si = conn[0];
       final ei = conn[1];
       if (si < poseLandmarks.length && ei < poseLandmarks.length) {
         canvas.drawLine(
-          Offset(
-            poseLandmarks[si].dx * size.width,
-            poseLandmarks[si].dy * size.height,
-          ),
-          Offset(
-            poseLandmarks[ei].dx * size.width,
-            poseLandmarks[ei].dy * size.height,
-          ),
+          mapLandmark(poseLandmarks[si]),
+          mapLandmark(poseLandmarks[ei]),
           linePaint,
         );
       }
     }
 
     for (final lm in poseLandmarks) {
-      canvas.drawCircle(
-        Offset(lm.dx * size.width, lm.dy * size.height),
-        5,
-        dotPaint,
-      );
+      canvas.drawCircle(mapLandmark(lm), 5, dotPaint);
     }
   }
 
   @override
   bool shouldRepaint(covariant _PosePainter old) =>
-      old.poseLandmarks != poseLandmarks;
+      old.poseLandmarks != poseLandmarks || old.sourceSize != sourceSize;
 }

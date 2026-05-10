@@ -99,10 +99,7 @@ class AppProfile {
 
   Future<void> save() async {
     if (isGuest) return;
-    await Future.wait([
-      _saveToPrefs(),
-      _saveToFirestore(),
-    ]);
+    await Future.wait([_saveToPrefs(), _saveToFirestore()]);
   }
 
   Future<void> _saveToPrefs() async {

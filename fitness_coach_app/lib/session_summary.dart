@@ -16,7 +16,10 @@ class SessionSummaryPage extends StatefulWidget {
   State<SessionSummaryPage> createState() => _SessionSummaryPageState();
 }
 
-class _SessionSummaryPageState extends State<SessionSummaryPage> {
+class _SessionSummaryPageState extends State<SessionSummaryPage>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _celebrationController;
+
   int get _totalCorrect =>
       widget.exerciseStats.values.fold(0, (s, m) => s + (m['correct'] ?? 0));
   int get _totalIncorrect =>
@@ -28,6 +31,37 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
     if (_accuracy >= 0.8) return MovementLabColors.correct;
     if (_accuracy >= 0.5) return MovementLabColors.tempo;
     return MovementLabColors.correction;
+  }
+
+  String get _bannerTitle {
+    if (_total == 0) return 'Session ready';
+    if (_accuracy >= 0.8) return 'Clean movement logged';
+    if (_accuracy >= 0.5) return 'Strong work logged';
+    return 'Baseline captured';
+  }
+
+  String get _bannerMessage {
+    if (_total == 0) return 'Start a measured set to build your report.';
+    if (_accuracy >= 0.8) return 'Your form stayed sharp. Keep this rhythm.';
+    if (_accuracy >= 0.5) {
+      return 'Progress is on the board. Refine the next set.';
+    }
+    return 'Data captured. The next set gets more precise.';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _celebrationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _celebrationController.dispose();
+    super.dispose();
   }
 
   Future<void> _saveSession() async {
@@ -97,40 +131,67 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
               const SizedBox(height: 16),
               const LabLabel('Movement report'),
               const SizedBox(height: 14),
+              AnimatedBuilder(
+                animation: _celebrationController,
+                builder: (context, _) {
+                  return _CelebrationBanner(
+                    progress: _celebrationController.value,
+                    color: _accuracyColor,
+                    title: _bannerTitle,
+                    message: _bannerMessage,
+                    total: _total,
+                  );
+                },
+              ),
+              const SizedBox(height: 22),
 
               // ── Accuracy arc ───────────────────────────────────────────
-              SizedBox(
-                width: 180,
-                height: 180,
-                child: CustomPaint(
-                  painter: _SummaryArcPainter(
-                    value: _accuracy,
-                    color: _accuracyColor,
-                  ),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '${(_accuracy * 100).round()}%',
-                          style: TextStyle(
+              AnimatedBuilder(
+                animation: _celebrationController,
+                builder: (context, _) {
+                  final arcProgress = Curves.easeOutCubic.transform(
+                    (_celebrationController.value / 0.78).clamp(0.0, 1.0),
+                  );
+                  return Transform.scale(
+                    scale: 0.94 + (arcProgress * 0.06),
+                    child: Opacity(
+                      opacity: arcProgress,
+                      child: SizedBox(
+                        width: 180,
+                        height: 180,
+                        child: CustomPaint(
+                          painter: _SummaryArcPainter(
+                            value: _accuracy * arcProgress,
                             color: _accuracyColor,
-                            fontSize: 40,
-                            fontWeight: FontWeight.w800,
+                          ),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${(_accuracy * 100 * arcProgress).round()}%',
+                                  style: TextStyle(
+                                    color: _accuracyColor,
+                                    fontSize: 40,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const Text(
+                                  'Accuracy',
+                                  style: TextStyle(
+                                    color: MovementLabColors.muted,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        const Text(
-                          'Accuracy',
-                          style: TextStyle(
-                            color: MovementLabColors.muted,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
 
               const SizedBox(height: 32),
@@ -139,29 +200,41 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
               Row(
                 children: [
                   Expanded(
-                    child: _StatCard(
-                      label: 'Total Reps',
-                      value: '$_total',
-                      icon: Icons.repeat,
-                      color: MovementLabColors.graphite,
+                    child: _AnimatedReportItem(
+                      controller: _celebrationController,
+                      delay: 0.20,
+                      child: _StatCard(
+                        label: 'Total Reps',
+                        value: '$_total',
+                        icon: Icons.repeat,
+                        color: MovementLabColors.graphite,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _StatCard(
-                      label: 'Correct',
-                      value: '$_totalCorrect',
-                      icon: Icons.check_circle_outline,
-                      color: MovementLabColors.correct,
+                    child: _AnimatedReportItem(
+                      controller: _celebrationController,
+                      delay: 0.30,
+                      child: _StatCard(
+                        label: 'Correct',
+                        value: '$_totalCorrect',
+                        icon: Icons.check_circle_outline,
+                        color: MovementLabColors.correct,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _StatCard(
-                      label: 'Incorrect',
-                      value: '$_totalIncorrect',
-                      icon: Icons.cancel_outlined,
-                      color: MovementLabColors.correction,
+                    child: _AnimatedReportItem(
+                      controller: _celebrationController,
+                      delay: 0.40,
+                      child: _StatCard(
+                        label: 'Incorrect',
+                        value: '$_totalIncorrect',
+                        icon: Icons.cancel_outlined,
+                        color: MovementLabColors.correction,
+                      ),
                     ),
                   ),
                 ],
@@ -184,10 +257,14 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
                 ),
                 const SizedBox(height: 12),
                 ...widget.exerciseStats.entries.map(
-                  (e) => _ExerciseRow(
-                    exercise: e.key,
-                    correct: e.value['correct'] ?? 0,
-                    incorrect: e.value['incorrect'] ?? 0,
+                  (e) => _AnimatedReportItem(
+                    controller: _celebrationController,
+                    delay: 0.52,
+                    child: _ExerciseRow(
+                      exercise: e.key,
+                      correct: e.value['correct'] ?? 0,
+                      incorrect: e.value['incorrect'] ?? 0,
+                    ),
                   ),
                 ),
               ],
@@ -218,6 +295,179 @@ class _SessionSummaryPageState extends State<SessionSummaryPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Celebration banner ───────────────────────────────────────────────────────
+
+class _CelebrationBanner extends StatelessWidget {
+  final double progress;
+  final Color color;
+  final String title;
+  final String message;
+  final int total;
+
+  const _CelebrationBanner({
+    required this.progress,
+    required this.color,
+    required this.title,
+    required this.message,
+    required this.total,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final eased = Curves.easeOutCubic.transform(progress.clamp(0.0, 1.0));
+    return Opacity(
+      opacity: eased,
+      child: Transform.translate(
+        offset: Offset(0, (1 - eased) * 18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: MovementLabColors.white,
+            border: Border.all(color: color, width: 1.6),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.16),
+                blurRadius: 22,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _CelebrationPulsePainter(
+                    progress: progress,
+                    color: color,
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.14),
+                      border: Border.all(color: color),
+                    ),
+                    child: Icon(
+                      total > 0 ? Icons.emoji_events_outlined : Icons.sensors,
+                      color: color,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const LabLabel('Calibration complete'),
+                        const SizedBox(height: 5),
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            color: MovementLabColors.ink,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            height: 1.05,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          message,
+                          style: const TextStyle(
+                            color: MovementLabColors.muted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CelebrationPulsePainter extends CustomPainter {
+  final double progress;
+  final Color color;
+
+  const _CelebrationPulsePainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.18)
+      ..strokeWidth = 1.2;
+    final sweep = Curves.easeOutCubic.transform(progress.clamp(0.0, 1.0));
+    final centerY = size.height / 2;
+
+    for (var i = 0; i < 9; i++) {
+      final x = size.width - 18 - (i * 18.0);
+      final height =
+          (10 + (math.sin((progress * math.pi * 2) + i) * 6).abs()) * sweep;
+      canvas.drawLine(
+        Offset(x, centerY - height),
+        Offset(x, centerY + height),
+        paint,
+      );
+    }
+
+    final ringPaint = Paint()
+      ..color = color.withValues(alpha: 0.12 * sweep)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+    canvas.drawCircle(
+      Offset(size.width - 42, centerY),
+      20 + (20 * sweep),
+      ringPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _CelebrationPulsePainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.color != color;
+}
+
+class _AnimatedReportItem extends StatelessWidget {
+  final AnimationController controller;
+  final double delay;
+  final Widget child;
+
+  const _AnimatedReportItem({
+    required this.controller,
+    required this.delay,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final raw = ((controller.value - delay) / 0.38).clamp(0.0, 1.0);
+        final eased = Curves.easeOutCubic.transform(raw);
+        return Opacity(
+          opacity: eased,
+          child: Transform.translate(
+            offset: Offset(0, (1 - eased) * 16),
+            child: child,
+          ),
+        );
+      },
     );
   }
 }
