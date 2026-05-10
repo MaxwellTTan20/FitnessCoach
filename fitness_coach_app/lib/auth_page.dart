@@ -73,7 +73,7 @@ class _AuthPageState extends State<AuthPage> {
                 ),
                 const SizedBox(height: 24),
                 const Text(
-                  'Lift & Flow',
+                  'Capy Coach',
                   style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: -0.5),
                 ),
                 const SizedBox(height: 8),
