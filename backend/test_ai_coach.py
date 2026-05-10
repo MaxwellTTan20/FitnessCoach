@@ -23,6 +23,8 @@ def _rep_data():
             "foot_pitch_angle": 12.6,
             "side_confidence": 0.91,
             "opposite_side_confidence": 0.42,
+            "elbow_horizontal_separation": 0.03,
+            "shoulder_angle_reliable": False,
         },
         "tracked_landmarks": {
             "shoulder": {"visibility": 0.9, "presence": 0.95},
@@ -89,6 +91,46 @@ class AICoachFeedbackTest(unittest.TestCase):
         self.assertIn("side-view foot pitch=12.60", prompt)
         self.assertIn("shoulder confidence=0.90", prompt)
         self.assertIn("toe-out rotation is unavailable", prompt)
+
+    def test_pushup_prompt_includes_tracked_details(self):
+        coach = AICoach.__new__(AICoach)
+        coach.exercise = "pushup"
+
+        prompt = coach._format_rep_data({
+            **_rep_data(),
+            "elbow_angle": 92,
+            "shoulder_angle": 45,
+            "body_angle": 168,
+        })
+
+        self.assertIn("Tracked details", prompt)
+        self.assertIn("shoulder angle reliable=False", prompt)
+        self.assertIn("elbow flare is limited", prompt)
+
+    def test_deadlift_prompt_includes_tracked_details(self):
+        coach = AICoach.__new__(AICoach)
+        coach.exercise = "deadlift"
+
+        prompt = coach._format_rep_data(_rep_data())
+
+        self.assertIn("Tracked details", prompt)
+        self.assertIn("side-view foot pitch=12.60", prompt)
+        self.assertIn("toe-out rotation is unavailable", prompt)
+
+    def test_bench_prompt_includes_tracked_details(self):
+        coach = AICoach.__new__(AICoach)
+        coach.exercise = "bench"
+
+        prompt = coach._format_rep_data({
+            **_rep_data(),
+            "elbow_angle": 92,
+            "shoulder_angle": 45,
+            "body_angle": 168,
+        })
+
+        self.assertIn("Tracked details", prompt)
+        self.assertIn("shoulder angle reliable=False", prompt)
+        self.assertIn("elbow flare is limited", prompt)
 
 
 if __name__ == "__main__":

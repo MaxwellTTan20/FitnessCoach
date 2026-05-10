@@ -34,6 +34,7 @@ MIN_REP_DURATION_SECONDS = 0.35
 SIDE_PROFILE_HYSTERESIS = 0.08
 SIDE_PROFILE_JOINTS = ("shoulder", "hip", "knee", "ankle")
 SQUAT_TRACKED_JOINTS = SIDE_PROFILE_JOINTS + ("heel", "foot_index")
+UPPER_BODY_TRACKED_JOINTS = ("shoulder", "elbow", "wrist", "hip", "ankle")
 
 
 def serialize_landmark(landmark):
@@ -53,15 +54,19 @@ def landmark_confidence(landmark):
 
 
 def side_profile_confidence(landmarks, side):
+    return side_joint_confidence(landmarks, side, SIDE_PROFILE_JOINTS)
+
+
+def side_joint_confidence(landmarks, side, joints):
     return statistics.mean(
         landmark_confidence(landmarks[LANDMARKS[f"{side}_{joint}"]])
-        for joint in SIDE_PROFILE_JOINTS
+        for joint in joints
     )
 
 
-def choose_reliable_squat_side(landmarks, previous_side=None):
-    left_confidence = side_profile_confidence(landmarks, "left")
-    right_confidence = side_profile_confidence(landmarks, "right")
+def choose_reliable_side(landmarks, joints, previous_side=None):
+    left_confidence = side_joint_confidence(landmarks, "left", joints)
+    right_confidence = side_joint_confidence(landmarks, "right", joints)
 
     if previous_side in {"left", "right"}:
         previous_confidence = (
@@ -74,6 +79,14 @@ def choose_reliable_squat_side(landmarks, previous_side=None):
             return previous_side
 
     return "left" if left_confidence >= right_confidence else "right"
+
+
+def choose_reliable_squat_side(landmarks, previous_side=None):
+    return choose_reliable_side(
+        landmarks,
+        SIDE_PROFILE_JOINTS,
+        previous_side=previous_side,
+    )
 
 
 def get_side_landmark_coords(landmarks, side, joint, w, h):
@@ -92,8 +105,12 @@ def line_angle_from_horizontal(p1, p2):
 
 
 def summarize_side_landmarks(landmarks, side):
+    return summarize_tracked_landmarks(landmarks, side, SQUAT_TRACKED_JOINTS)
+
+
+def summarize_tracked_landmarks(landmarks, side, joints):
     summary = {}
-    for joint in SQUAT_TRACKED_JOINTS:
+    for joint in joints:
         landmark = landmarks[LANDMARKS[f"{side}_{joint}"]]
         summary[joint] = (
             dict(landmark)
@@ -101,6 +118,24 @@ def summarize_side_landmarks(landmarks, side):
             else serialize_landmark(landmark)
         )
     return summary
+
+
+def build_tracked_context(landmarks, side, joints, metrics):
+    if not side or not landmarks:
+        return {}
+    opposite_side = "right" if side == "left" else "left"
+    tracked_metrics = dict(metrics)
+    tracked_metrics["side_confidence"] = side_joint_confidence(landmarks, side, joints)
+    tracked_metrics["opposite_side_confidence"] = side_joint_confidence(
+        landmarks,
+        opposite_side,
+        joints,
+    )
+    return {
+        "tracked_side": side,
+        "tracked_landmarks": summarize_tracked_landmarks(landmarks, side, joints),
+        "tracked_metrics": tracked_metrics,
+    }
 
 
 class ExerciseAnalyzer:
@@ -388,7 +423,10 @@ class ExerciseAnalyzer:
         median_angles = {}
         for key in angle_keys:
             vals = [f["angles"][key] for f in window_frames]
-            median_angles[key] = statistics.median(vals)
+            if all(isinstance(value, bool) for value in vals):
+                median_angles[key] = sum(vals) >= (len(vals) / 2)
+            else:
+                median_angles[key] = statistics.median(vals)
 
         tempo = self._compute_tempo(i_min, len(buf), buf)
 
@@ -570,17 +608,17 @@ class SquatAnalyzer(ExerciseAnalyzer):
         extra_data = {
             "knee_angle": knee_angle,
             "hip_angle": hip_angle,
-            "tracked_side": self._side_profile_side,
-            "tracked_landmarks": summarize_side_landmarks(
-                rep_analysis["deepest_landmarks"],
-                self._side_profile_side,
-            ) if self._side_profile_side and rep_analysis.get("deepest_landmarks") else {},
-            "tracked_metrics": {
+        }
+        extra_data.update(build_tracked_context(
+            rep_analysis.get("deepest_landmarks"),
+            self._side_profile_side,
+            SQUAT_TRACKED_JOINTS,
+            {
                 key: value
                 for key, value in angles.items()
                 if key not in {"primary", "secondary"}
             },
-        }
+        ))
         return is_correct, feedback, extra_data
 
     def get_angle_labels(self):
@@ -614,6 +652,8 @@ class PushupAnalyzer(ExerciseAnalyzer):
         self.shoulder_angle = 0.0
         self.body_angle = 0.0
         self._shoulder_angle_reliable = True
+        self._tracked_side = None
+        self._tracked_side = None
 
     def _get_thresholds(self, mode):
         return PUSHUP_THRESHOLDS[mode]
@@ -624,6 +664,8 @@ class PushupAnalyzer(ExerciseAnalyzer):
         self.shoulder_angle = 0.0
         self.body_angle = 0.0
         self._shoulder_angle_reliable = True
+        self._tracked_side = None
+        self._tracked_side = None
 
     def _check_alignment(self, landmarks, w, h):
         # Body should be roughly horizontal for push-up position.
@@ -637,6 +679,11 @@ class PushupAnalyzer(ExerciseAnalyzer):
         return False, ""
 
     def _update_angles(self, landmarks, w, h):
+        self._tracked_side = choose_reliable_side(
+            landmarks,
+            UPPER_BODY_TRACKED_JOINTS,
+            previous_side=self._tracked_side,
+        )
         l_shoulder = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_shoulder"], w, h)
         r_shoulder = get_landmark_coords_from_normalized(landmarks, LANDMARKS["right_shoulder"], w, h)
         l_elbow = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_elbow"], w, h)
@@ -680,6 +727,8 @@ class PushupAnalyzer(ExerciseAnalyzer):
             "elbow_angle": elbow_angle,
             "shoulder_angle": shoulder_angle,
             "body_angle": body_angle,
+            "elbow_horizontal_separation": elbow_h_sep,
+            "shoulder_angle_reliable": self._shoulder_angle_reliable,
         }
 
     def _on_enter_active(self):
@@ -724,6 +773,16 @@ class PushupAnalyzer(ExerciseAnalyzer):
             "shoulder_angle": shoulder_angle,
             "body_angle": body_angle,
         }
+        extra_data.update(build_tracked_context(
+            rep_analysis.get("deepest_landmarks"),
+            self._tracked_side,
+            UPPER_BODY_TRACKED_JOINTS,
+            {
+                key: value
+                for key, value in angles.items()
+                if key not in {"primary", "secondary"}
+            },
+        ))
         return is_correct, feedback, extra_data
 
     def get_angle_labels(self):
@@ -757,6 +816,7 @@ class DeadliftAnalyzer(ExerciseAnalyzer):
         super().__init__(mode, on_rep_complete)
         self.hip_angle = 0.0
         self.knee_angle = 0.0
+        self._tracked_side = None
 
     def _get_thresholds(self, mode):
         return DEADLIFT_THRESHOLDS[mode]
@@ -765,6 +825,7 @@ class DeadliftAnalyzer(ExerciseAnalyzer):
         super().reset()
         self.hip_angle = 0.0
         self.knee_angle = 0.0
+        self._tracked_side = None
 
     def _check_alignment(self, landmarks, w, h):
         l_shoulder = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_shoulder"], w, h)
@@ -775,6 +836,11 @@ class DeadliftAnalyzer(ExerciseAnalyzer):
         return False, ""
 
     def _update_angles(self, landmarks, w, h):
+        self._tracked_side = choose_reliable_side(
+            landmarks,
+            SQUAT_TRACKED_JOINTS,
+            previous_side=self._tracked_side,
+        )
         l_shoulder = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_shoulder"], w, h)
         r_shoulder = get_landmark_coords_from_normalized(landmarks, LANDMARKS["right_shoulder"], w, h)
         l_hip = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_hip"], w, h)
@@ -783,6 +849,10 @@ class DeadliftAnalyzer(ExerciseAnalyzer):
         r_knee = get_landmark_coords_from_normalized(landmarks, LANDMARKS["right_knee"], w, h)
         l_ankle = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_ankle"], w, h)
         r_ankle = get_landmark_coords_from_normalized(landmarks, LANDMARKS["right_ankle"], w, h)
+        tracked_shoulder = get_side_landmark_coords(landmarks, self._tracked_side, "shoulder", w, h)
+        tracked_hip = get_side_landmark_coords(landmarks, self._tracked_side, "hip", w, h)
+        tracked_heel = get_side_landmark_coords(landmarks, self._tracked_side, "heel", w, h)
+        tracked_foot_index = get_side_landmark_coords(landmarks, self._tracked_side, "foot_index", w, h)
 
         l_hip_angle = find_angle(l_shoulder, l_hip, l_knee)
         r_hip_angle = find_angle(r_shoulder, r_hip, r_knee)
@@ -801,6 +871,11 @@ class DeadliftAnalyzer(ExerciseAnalyzer):
             "secondary": knee_angle,
             "hip_angle": hip_angle,
             "knee_angle": knee_angle,
+            "torso_offset_angle": find_offset_angle(tracked_shoulder, tracked_hip),
+            "foot_pitch_angle": line_angle_from_horizontal(
+                tracked_heel,
+                tracked_foot_index,
+            ),
         }
 
     def _on_enter_active(self):
@@ -828,6 +903,16 @@ class DeadliftAnalyzer(ExerciseAnalyzer):
             feedback = "Slow down the lowering phase"
 
         extra_data = {"hip_angle": hip_angle, "knee_angle": knee_angle}
+        extra_data.update(build_tracked_context(
+            rep_analysis.get("deepest_landmarks"),
+            self._tracked_side,
+            SQUAT_TRACKED_JOINTS,
+            {
+                key: value
+                for key, value in angles.items()
+                if key not in {"primary", "secondary"}
+            },
+        ))
         return is_correct, feedback, extra_data
 
     def get_angle_labels(self):
@@ -880,6 +965,11 @@ class BenchAnalyzer(ExerciseAnalyzer):
         return False, ""
 
     def _update_angles(self, landmarks, w, h):
+        self._tracked_side = choose_reliable_side(
+            landmarks,
+            UPPER_BODY_TRACKED_JOINTS,
+            previous_side=self._tracked_side,
+        )
         l_shoulder = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_shoulder"], w, h)
         r_shoulder = get_landmark_coords_from_normalized(landmarks, LANDMARKS["right_shoulder"], w, h)
         l_elbow = get_landmark_coords_from_normalized(landmarks, LANDMARKS["left_elbow"], w, h)
@@ -917,6 +1007,8 @@ class BenchAnalyzer(ExerciseAnalyzer):
             "elbow_angle": elbow_angle,
             "shoulder_angle": shoulder_angle,
             "body_angle": body_angle,
+            "elbow_horizontal_separation": elbow_h_sep,
+            "shoulder_angle_reliable": self._shoulder_angle_reliable,
         }
 
     def _on_enter_active(self):
@@ -959,6 +1051,16 @@ class BenchAnalyzer(ExerciseAnalyzer):
             "shoulder_angle": shoulder_angle,
             "body_angle": body_angle,
         }
+        extra_data.update(build_tracked_context(
+            rep_analysis.get("deepest_landmarks"),
+            self._tracked_side,
+            UPPER_BODY_TRACKED_JOINTS,
+            {
+                key: value
+                for key, value in angles.items()
+                if key not in {"primary", "secondary"}
+            },
+        ))
         return is_correct, feedback, extra_data
 
     def get_angle_labels(self):

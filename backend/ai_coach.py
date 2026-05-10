@@ -32,6 +32,7 @@ When given rep data, provide 1-2 short sentences of helpful, encouraging feedbac
 - Correcting elbow flare (glenohumeral/shoulder angle out of range)
 - Noting rushed descent or bouncing out of the bottom
 
+Use tracked metrics and landmark confidence when helpful. Elbow flare is limited in a pure side view, so respect the reliability flag.
 Keep responses SHORT (under 18 words total) since they will be spoken aloud during exercise.
 Never use bullet points or lists. Speak naturally as a coach would.""",
 
@@ -43,6 +44,7 @@ When given rep data, provide 1-2 short sentences of helpful, encouraging feedbac
 - Noting if the lowering phase was too fast (rushed descent)
 - Noting if the pull was jerky or uncontrolled (fast ascent)
 
+Use tracked metrics and landmark confidence when helpful. Chest position is inferred from torso/hip angles; toe-out rotation is not directly available.
 Keep responses SHORT (under 18 words total) since they will be spoken aloud during exercise.
 Never use bullet points or lists. Speak naturally as a coach would.""",
 
@@ -55,6 +57,7 @@ When given rep data, provide 1-2 short sentences of helpful, encouraging feedbac
 - Correcting excessive elbow flare (glenohumeral/shoulder angle out of range)
 - Noting rushed descent or bouncing the bar off the chest
 
+Use tracked metrics and landmark confidence when helpful. Elbow flare is limited in a pure side view, so respect the reliability flag.
 Keep responses SHORT (under 18 words total) since they will be spoken aloud during exercise.
 Never use bullet points or lists. Speak naturally as a coach would.""",
 }
@@ -241,6 +244,18 @@ class AICoach:
 Provide brief coaching feedback for this rep."""
 
     def _format_squat_tracked_details(self, rep_data: dict) -> str:
+        return self._format_tracked_details(
+            rep_data,
+            confidence_joints=("shoulder", "hip", "knee", "ankle", "heel", "foot_index"),
+            caveat="chest is inferred from shoulder-hip-knee and torso offset; toe-out rotation is unavailable",
+        )
+
+    def _format_tracked_details(
+        self,
+        rep_data: dict,
+        confidence_joints: tuple[str, ...],
+        caveat: str,
+    ) -> str:
         metrics = rep_data.get("tracked_metrics", {})
         landmarks = rep_data.get("tracked_landmarks", {})
         tracked_side = rep_data.get("tracked_side") or "unknown"
@@ -251,15 +266,19 @@ Provide brief coaching feedback for this rep."""
             "foot_pitch_angle": "side-view foot pitch",
             "side_confidence": "side confidence",
             "opposite_side_confidence": "opposite side confidence",
+            "elbow_horizontal_separation": "elbow horizontal separation",
+            "shoulder_angle_reliable": "shoulder angle reliable",
         }
         for key, label in metric_labels.items():
             value = metrics.get(key)
-            if isinstance(value, (int, float)):
+            if isinstance(value, bool):
+                details.append(f"{label}={value}")
+            elif isinstance(value, (int, float)):
                 details.append(f"{label}={value:.2f}")
 
         if landmarks:
             confidence_parts = []
-            for joint in ("shoulder", "hip", "knee", "ankle", "heel", "foot_index"):
+            for joint in confidence_joints:
                 landmark = landmarks.get(joint, {})
                 visibility = landmark.get("visibility")
                 presence = landmark.get("presence")
@@ -270,9 +289,7 @@ Provide brief coaching feedback for this rep."""
             if confidence_parts:
                 details.append("; ".join(confidence_parts))
 
-        details.append(
-            "chest is inferred from shoulder-hip-knee and torso offset; toe-out rotation is unavailable"
-        )
+        details.append(caveat)
         return "; ".join(details)
 
     def _format_pushup_rep(self, rep_data: dict) -> str:
@@ -283,12 +300,18 @@ Provide brief coaching feedback for this rep."""
         descent_str = f"{descent:.1f}s" if descent is not None else "?"
         ascent_str = f"{ascent:.1f}s" if ascent is not None else "?"
         tempo_str = f"{descent_str} descent, {ascent_str} ascent ({tempo_status})"
+        tracked_details = self._format_tracked_details(
+            rep_data,
+            confidence_joints=("shoulder", "elbow", "wrist", "hip", "ankle"),
+            caveat="elbow flare is limited in pure side view; use shoulder angle only when reliable",
+        )
 
         return f"""Rep #{rep_data['rep_number']} completed:
 - Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
 - Elbow angle at bottom: {rep_data.get('elbow_angle', 0):.0f} degrees
 - Shoulder/glenohumeral angle: {rep_data.get('shoulder_angle', 0):.0f} degrees
 - Body alignment angle: {rep_data.get('body_angle', 0):.0f} degrees
+- Tracked details: {tracked_details}
 - Tempo: {tempo_str}
 - Mode: {rep_data['mode']}
 - Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
@@ -303,11 +326,17 @@ Provide brief coaching feedback for this rep."""
         descent_str = f"{descent:.1f}s" if descent is not None else "?"
         ascent_str = f"{ascent:.1f}s" if ascent is not None else "?"
         tempo_str = f"{descent_str} lower, {ascent_str} pull ({tempo_status})"
+        tracked_details = self._format_tracked_details(
+            rep_data,
+            confidence_joints=("shoulder", "hip", "knee", "ankle", "heel", "foot_index"),
+            caveat="chest is inferred from shoulder-hip-knee and torso offset; toe-out rotation is unavailable",
+        )
 
         return f"""Rep #{rep_data['rep_number']} completed:
 - Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
 - Hip hinge angle at bottom: {rep_data.get('hip_angle', 0):.0f} degrees (lower = deeper hinge)
 - Knee angle at bottom: {rep_data.get('knee_angle', 0):.0f} degrees
+- Tracked details: {tracked_details}
 - Tempo: {tempo_str}
 - Mode: {rep_data['mode']}
 - Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
@@ -322,12 +351,18 @@ Provide brief coaching feedback for this rep."""
         descent_str = f"{descent:.1f}s" if descent is not None else "?"
         ascent_str = f"{ascent:.1f}s" if ascent is not None else "?"
         tempo_str = f"{descent_str} descent, {ascent_str} press ({tempo_status})"
+        tracked_details = self._format_tracked_details(
+            rep_data,
+            confidence_joints=("shoulder", "elbow", "wrist", "hip", "ankle"),
+            caveat="elbow flare is limited in pure side view; use shoulder angle only when reliable",
+        )
 
         return f"""Rep #{rep_data['rep_number']} completed:
 - Form: {"CORRECT" if rep_data['is_correct'] else "INCORRECT"}
 - Elbow angle at bottom: {rep_data.get('elbow_angle', 0):.0f} degrees
 - Shoulder/elbow flare angle: {rep_data.get('shoulder_angle', 0):.0f} degrees
 - Body alignment (flat on bench): {rep_data.get('body_angle', 0):.0f} degrees
+- Tracked details: {tracked_details}
 - Tempo: {tempo_str}
 - Mode: {rep_data['mode']}
 - Session stats: {rep_data['correct_count']} correct, {rep_data['incorrect_count']} incorrect
